@@ -6,8 +6,18 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		693A504A2E7F4A2800454F56 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 693A50492E7F4A2800454F56 /* FirebaseCore */; };
+		693A504C2E7F4A2D00454F56 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 693A504B2E7F4A2D00454F56 /* FirebaseFirestore */; };
+		693A504E2E7F4A6700454F56 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 693A504D2E7F4A6700454F56 /* FirebaseAuth */; };
+		693F0CDF2E7F43FE001D79D9 /* FirebaseAI in Frameworks */ = {isa = PBXBuildFile; productRef = 693F0CDE2E7F43FE001D79D9 /* FirebaseAI */; };
+		693F0CE12E7F43FE001D79D9 /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = 693F0CE02E7F43FE001D79D9 /* FirebaseAppCheck */; };
+		695614AC2E7F644E0099EFE3 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 695614AB2E7F644E0099EFE3 /* GoogleService-Info.plist */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		6930090A2E78EBD1000F28D2 /* Todo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Todo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		695614AB2E7F644E0099EFE3 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -23,6 +33,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				693F0CE12E7F43FE001D79D9 /* FirebaseAppCheck in Frameworks */,
+				693A504E2E7F4A6700454F56 /* FirebaseAuth in Frameworks */,
+				693A504C2E7F4A2D00454F56 /* FirebaseFirestore in Frameworks */,
+				693A504A2E7F4A2800454F56 /* FirebaseCore in Frameworks */,
+				693F0CDF2E7F43FE001D79D9 /* FirebaseAI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -33,7 +48,9 @@
 			isa = PBXGroup;
 			children = (
 				6930090C2E78EBD1000F28D2 /* Todo */,
+				693A50482E7F4A2800454F56 /* Frameworks */,
 				6930090B2E78EBD1000F28D2 /* Products */,
+				695614AB2E7F644E0099EFE3 /* GoogleService-Info.plist */,
 			);
 			sourceTree = "<group>";
 		};
@@ -43,6 +60,13 @@
 				6930090A2E78EBD1000F28D2 /* Todo.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		693A50482E7F4A2800454F56 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -65,6 +89,11 @@
 			);
 			name = Todo;
 			packageProductDependencies = (
+				693F0CDE2E7F43FE001D79D9 /* FirebaseAI */,
+				693F0CE02E7F43FE001D79D9 /* FirebaseAppCheck */,
+				693A50492E7F4A2800454F56 /* FirebaseCore */,
+				693A504B2E7F4A2D00454F56 /* FirebaseFirestore */,
+				693A504D2E7F4A6700454F56 /* FirebaseAuth */,
 			);
 			productName = Todo;
 			productReference = 6930090A2E78EBD1000F28D2 /* Todo.app */;
@@ -78,7 +107,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1640;
-				LastUpgradeCheck = 1640;
+				LastUpgradeCheck = 2600;
 				TargetAttributes = {
 					693009092E78EBD1000F28D2 = {
 						CreatedOnToolsVersion = 16.4;
@@ -94,6 +123,9 @@
 			);
 			mainGroup = 693009012E78EBD1000F28D2;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				693F0CDD2E7F43FE001D79D9 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6930090B2E78EBD1000F28D2 /* Products */;
 			projectDirPath = "";
@@ -109,6 +141,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				695614AC2E7F644E0099EFE3 /* GoogleService-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -183,6 +216,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -239,6 +273,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};
@@ -320,6 +355,45 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		693F0CDD2E7F43FE001D79D9 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.3.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		693A50492E7F4A2800454F56 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 693F0CDD2E7F43FE001D79D9 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		693A504B2E7F4A2D00454F56 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 693F0CDD2E7F43FE001D79D9 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		693A504D2E7F4A6700454F56 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 693F0CDD2E7F43FE001D79D9 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		693F0CDE2E7F43FE001D79D9 /* FirebaseAI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 693F0CDD2E7F43FE001D79D9 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAI;
+		};
+		693F0CE02E7F43FE001D79D9 /* FirebaseAppCheck */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 693F0CDD2E7F43FE001D79D9 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAppCheck;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 693009022E78EBD1000F28D2 /* Project object */;
 }
