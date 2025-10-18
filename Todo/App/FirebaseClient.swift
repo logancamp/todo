@@ -88,9 +88,9 @@ extension FirebaseClient {
         }
     }
 
-    func createTodo(uid: String, title: String, kind: TodoKind, dueAt: Date?) async throws -> String {
+    func createTodo(uid: String, title: String, kind: TodoKind, dueAt: Date?) async throws -> Todo {
         // Temporary stub implementation
-        throw NSError(domain: "FirebaseClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "createTodo(uid:title:kind:dueAt:) not implemented"]) 
+        throw NSError(domain: "FirebaseClient", code: -1, userInfo: [NSLocalizedDescriptionKey: "createTodo(uid:title:kind:dueAt:) not implemented"]) // Should return a Todo
     }
 
     func updateTodo(uid: String, todo: Todo) async throws {
@@ -106,3 +106,4 @@ extension FirebaseClient {
 
 // MARK: - Small internal error
 private enum AuthError: Error { case noCurrentUser }
+

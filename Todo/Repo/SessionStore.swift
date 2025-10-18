@@ -85,15 +85,6 @@ final class SessionStore: ObservableObject {
         }
     }
     
-//    func sendEmailVerification() async throws {
-//        do {
-//            try await auth.sendEmailVerification()
-//        } catch {
-//            lastError = error
-//            throw error
-//        }
-//    }
-    
     func sendEmailVerification() async throws {
         guard let user = auth.currentUser else {
             print("[DEBUG] No current user, cannot send verification.")
@@ -144,3 +135,6 @@ final class SessionStore: ObservableObject {
         }
     }
 }
+
+// Isolate the conformance to the main actor to match the type's isolation and avoid Swift 6 data race diagnostics.
+extension SessionStore: @MainActor SessionProviding {}
