@@ -81,7 +81,7 @@ struct RootGate: View {
             SignInView()
         case .signedIn(let verified):
             if verified {
-                TempView() // replace with your TodoList later
+                TodoListScreen() // replace with your TodoList later
             } else {
                 VerifyEmailView()
             }
