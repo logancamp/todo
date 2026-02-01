@@ -9,7 +9,6 @@ import SwiftUI
 import UIKit
 
 // MARK: - Public host
-
 /// A SwiftUI ↔︎ UIKit bridge that renders one big, sectioned list (days) with sticky headers.
 /// You feed it `TodoSection`s from your store; it renders SwiftUI rows/headers in a UICollectionView.
 public struct TodoScrollHost: UIViewRepresentable {
@@ -44,12 +43,15 @@ public struct TodoScrollHost: UIViewRepresentable {
     }
 
     // MARK: UIViewRepresentable
-
     public func makeUIView(context: Context) -> UICollectionView {
         let cv = UICollectionView(frame: .zero, collectionViewLayout: Layout.make())
         cv.backgroundColor = .clear
         cv.delegate = context.coordinator
+        cv.delaysContentTouches = false
+        cv.canCancelContentTouches = true
         context.coordinator.install(on: cv, rowView: rowView, headerView: headerView)
+
+        // Reserve space for the header when fully expanded
         context.coordinator.apply(sections: sections, animated: false)
         return cv
     }
@@ -58,18 +60,18 @@ public struct TodoScrollHost: UIViewRepresentable {
         context.coordinator.onCenteredSectionChange = onCenteredSectionChange
         context.coordinator.onSelect = onSelect
         context.coordinator.collapse = $collapse
-        context.coordinator.apply(sections: sections, animated: true)
+        context.coordinator.applyIfNeeded(sections: sections)
     }
 
     public func makeCoordinator() -> Coordinator { Coordinator() }
 }
 
 // MARK: - Coordinator
-
 public extension TodoScrollHost {
     final class Coordinator: NSObject, UICollectionViewDelegate {
         private(set) weak var collectionView: UICollectionView?
         private var dataSource: DS!
+        private var lastFingerprint: Int = 0
         fileprivate var collapse: Binding<CGFloat> = .constant(0)
         fileprivate var onCenteredSectionChange: (String) -> Void = { _ in }
         fileprivate var onSelect: (String) -> Void = { _ in }
@@ -95,19 +97,56 @@ public extension TodoScrollHost {
                 self?.updateCenteredSection()
             }
         }
+        
+        func applyIfNeeded(sections: [TodoSection]) {
+            let fp = fingerprint(sections)
+            guard fp != lastFingerprint else { return }
+            lastFingerprint = fp
+            apply(sections: sections, animated: true)
+        }
+
+        private func fingerprint(_ sections: [TodoSection]) -> Int {
+            var h = 0
+            h = h &* 31 &+ sections.count
+            for s in sections {
+                h = h &* 31 &+ s.id.hashValue
+                h = h &* 31 &+ s.items.count
+                // only IDs; cheap and stable for diff decisions
+                for t in s.items {
+                    h = h &* 31 &+ t.id.hashValue
+                }
+            }
+            return h
+        }
+        
+        func setTopInset(_ cv: UICollectionView, to newTop: CGFloat) {
+            let oldTop = cv.contentInset.top
+            guard abs(oldTop - newTop) > 0.5 else { return }
+
+            // Adjust offset so visible content doesn't jump when inset changes
+            let delta = newTop - oldTop
+            cv.contentInset.top = newTop
+            cv.verticalScrollIndicatorInsets.top = newTop
+            cv.contentOffset.y -= delta
+        }
 
         // MARK: Selection
-
         public func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
             guard let id = dataSource.itemID(at: indexPath) else { return }
             onSelect(id)
         }
 
         // MARK: Scrolling feedback
-
         public func scrollViewDidScroll(_ scrollView: UIScrollView) {
-            // Normalize to 0..1 over first ~120pt of scroll
-            let p = max(0, min(1, scrollView.contentOffset.y / 120.0))
+            let maxH: CGFloat = 120
+            let minH: CGFloat = 64
+            let range = maxH - minH
+
+            // Effective scroll amount relative to top (stable with insets)
+            let effective = max(0, scrollView.contentOffset.y + maxH)
+
+            // Collapse over `range` points
+            let p = max(0, min(1, effective / range))
             collapse.wrappedValue = p
             updateCenteredSection()
         }
@@ -130,11 +169,31 @@ public extension TodoScrollHost {
                 onCenteredSectionChange(sid)
             }
         }
+        
+        public func collectionView(
+            _ collectionView: UICollectionView,
+            trailingSwipeActionsConfigurationForItemAt indexPath: IndexPath
+        ) -> UISwipeActionsConfiguration? {
+            guard let id = dataSource.itemID(at: indexPath) else { return nil }
+
+            let more = UIContextualAction(style: .normal, title: "More") { [weak self] _, _, done in
+                self?.onSelect(id) // replace later with a dedicated callback (onMenu)
+                done(true)
+            }
+
+            let delete = UIContextualAction(style: .destructive, title: "Delete") { _, _, done in
+                // later: call onDelete(id)
+                done(true)
+            }
+
+            let config = UISwipeActionsConfiguration(actions: [delete, more])
+            config.performsFirstActionWithFullSwipe = false
+            return config
+        }
     }
 }
 
 // MARK: - Internal layout (sticky headers + self-sizing rows)
-
 private enum Layout {
     static func make() -> UICollectionViewLayout {
         let itemSize = NSCollectionLayoutSize(
@@ -174,7 +233,6 @@ private enum Layout {
 }
 
 // MARK: - Internal diffable data source
-
 private final class DS: UICollectionViewDiffableDataSource<String, String> {
     static let headerKind = "todo.section.header"
 
@@ -202,12 +260,6 @@ private final class DS: UICollectionViewDiffableDataSource<String, String> {
             cell.backgroundConfiguration = bg
             // We'll replace contentConfiguration in the dataSource cellProvider below where `self` is available
         }
-
-        // Create a placeholder header registration that doesn't capture `self`
-        // We'll actually install the real supplementary provider after super.init
-        let headerReg = UICollectionView.SupplementaryRegistration<UICollectionReusableView>(
-            elementKind: Self.headerKind
-        ) { _, _, _ in }
 
         // Call super.init with a cellProvider that can be updated to use our rowViewProvider after we set `self`
         super.init(collectionView: collectionView) { cv, indexPath, itemIdentifier in
@@ -301,7 +353,6 @@ private final class DS: UICollectionViewDiffableDataSource<String, String> {
 }
 
 // MARK: - Safe subscripts
-
 private extension Array {
     subscript(safe i: Int) -> Element? { (startIndex..<endIndex).contains(i) ? self[i] : nil }
 }

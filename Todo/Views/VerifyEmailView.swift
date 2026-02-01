@@ -37,3 +37,15 @@ struct VerifyEmailView: View {
         .padding()
     }
 }
+
+#Preview("VerifyEmailView – Error") {
+    let session = SessionStore()
+    session.lastError = NSError(
+        domain: "Preview",
+        code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "Couldn’t send verification email."]
+    )
+
+    return VerifyEmailView()
+        .environmentObject(session)
+}
