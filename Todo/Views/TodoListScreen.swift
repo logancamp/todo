@@ -13,10 +13,17 @@ struct TodoListScreen: View {
 
     @State private var collapse: CGFloat = 0
     @State private var currentSectionTitle = ""
-    @State private var showingNewTodo = false
+    @State private var currentSectionID = ""
     @State private var expandedTodoID: Todo.ID?
     @State private var activeFilter: TodoFilter = .all
     @State private var showingError = false
+
+    // Draft state
+    @State private var draftSectionID: String? = nil
+    @State private var draftTitle = ""
+    @State private var draftNotes = ""
+    @State private var draftKind: TodoKind = .task
+    @State private var draftDueDate: Date? = nil
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -30,9 +37,8 @@ struct TodoListScreen: View {
                         sections: store.sections,
                         collapse: $collapse,
                         onCenteredSectionChange: { id in
-                            // Map ID → title so header shows "Someday" not "someday"
-                            currentSectionTitle = store.sections
-                                .first(where: { $0.id == id })?.title ?? id
+                            currentSectionID = id
+                            currentSectionTitle = store.sections.first(where: { $0.id == id })?.title ?? id
                         },
                         onSelect: { id in
                             withAnimation(.snappy) {
@@ -40,6 +46,22 @@ struct TodoListScreen: View {
                             }
                         },
                         onDelete: { id in Task { await store.delete(id) } },
+                        onMove: { id, afterID, sectionID in
+                            Task { await store.reorder(id: id, afterID: afterID, inSectionID: sectionID) }
+                        },
+                        draftSectionID: draftSectionID,
+                        draftView: draftSectionID != nil ? {
+                            AnyView(
+                                TodoDraftRow(
+                                    title: $draftTitle,
+                                    notes: $draftNotes,
+                                    kind: $draftKind,
+                                    dueDate: $draftDueDate,
+                                    onSave: saveDraft,
+                                    onCancel: clearDraft
+                                )
+                            )
+                        } : nil,
                         rowView: { todo in
                             TodoItemView(
                                 todo: todo,
@@ -63,16 +85,13 @@ struct TodoListScreen: View {
             }
 
             FloatingActionButton(systemImage: "plus") {
-                showingNewTodo = true
+                openDraft()
             }
             .padding(.trailing, 18)
             .padding(.bottom, 18)
         }
         .onAppear { store.start(filter: activeFilter) }
         .onDisappear { store.stop() }
-        .sheet(isPresented: $showingNewTodo) {
-            NewTodoSheet(isPresented: $showingNewTodo)
-        }
         .alert("Something went wrong", isPresented: $showingError) {
             Button("OK") { store.lastError = nil }
         } message: {
@@ -83,7 +102,7 @@ struct TodoListScreen: View {
         }
     }
 
-    // MARK: - Header with filter menu + sign out
+    // MARK: - Header
 
     private var headerBar: some View {
         ZStack(alignment: .topTrailing) {
@@ -95,12 +114,8 @@ struct TodoListScreen: View {
                     filterButton("Active",    filter: .pending,   icon: "circle")
                     filterButton("Completed", filter: .completed, icon: "checkmark.circle")
                 }
-
                 Divider()
-
-                Button(role: .destructive) {
-                    try? session.signOut()
-                } label: {
+                Button(role: .destructive) { try? session.signOut() } label: {
                     Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
                 }
             } label: {
@@ -112,7 +127,6 @@ struct TodoListScreen: View {
             }
             .padding(.trailing, 8)
             .padding(.top, 8)
-            .accessibilityLabel("Menu")
         }
     }
 
@@ -127,9 +141,43 @@ struct TodoListScreen: View {
     }
 
     private var menuIcon: String {
-        activeFilter == .all
-            ? "line.3.horizontal.decrease.circle"
-            : "line.3.horizontal.decrease.circle.fill"
+        activeFilter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill"
+    }
+
+    // MARK: - Draft
+
+    private func openDraft() {
+        let targetID = currentSectionID.isEmpty ? "someday" : currentSectionID
+        draftDueDate = SectionMapper.date(from: targetID)
+        draftKind = .task
+        draftTitle = ""
+        draftNotes = ""
+        draftSectionID = targetID
+    }
+
+    private func saveDraft() {
+        let trimmed = draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let sectionID = draftSectionID else { clearDraft(); return }
+        let insertBeforeOrder = store.sections
+            .first(where: { $0.id == sectionID })?.items.first?.order
+        Task {
+            await store.add(
+                title: trimmed,
+                kind: draftKind,
+                dueAt: draftDueDate,
+                notes: draftNotes,
+                insertBeforeOrder: insertBeforeOrder
+            )
+        }
+        clearDraft()
+    }
+
+    private func clearDraft() {
+        draftSectionID = nil
+        draftTitle = ""
+        draftNotes = ""
+        draftKind = .task
+        draftDueDate = nil
     }
 
     // MARK: - Empty state
@@ -158,64 +206,6 @@ struct TodoListScreen: View {
         case .completed: return "Nothing completed"
         }
     }
-}
-
-// MARK: - New todo sheet
-
-private struct NewTodoSheet: View {
-    @Environment(TodoStore.self) private var store
-    @Binding var isPresented: Bool
-    @State private var title = ""
-    @State private var kind: TodoKind = .task
-    @State private var hasDueDate = false
-    @State private var dueDate = Date()
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("Title", text: $title)
-                        .submitLabel(.done)
-                }
-
-                Section {
-                    Picker("Kind", selection: $kind) {
-                        ForEach(TodoKind.allCases) { k in
-                            Text(k.rawValue.capitalized).tag(k)
-                        }
-                    }
-
-                    Toggle("Due date", isOn: $hasDueDate.animation())
-
-                    if hasDueDate {
-                        DatePicker("", selection: $dueDate, displayedComponents: .date)
-                            .datePickerStyle(.graphical)
-                    }
-                }
-            }
-            .navigationTitle("New todo")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
-                        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !trimmed.isEmpty else { return }
-                        Task {
-                            await store.add(title: trimmed, kind: kind, dueAt: hasDueDate ? dueDate : nil)
-                            dismiss()
-                        }
-                    }
-                    .bold()
-                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-        }
-    }
-
-    private func dismiss() { title = ""; isPresented = false }
 }
 
 #Preview("TodoListScreen") {

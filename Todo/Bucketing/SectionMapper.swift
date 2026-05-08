@@ -11,7 +11,7 @@ struct SectionMapper {
     let policy: BucketPolicy
     init(policy: BucketPolicy) { self.policy = policy }
 
-    // Static formatter — allocated once
+    // Allocated once — not on every call
     private static let idFormatter: DateFormatter = {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"
@@ -26,9 +26,29 @@ struct SectionMapper {
 
     private func sectionID(_ b: BucketID) -> String {
         switch b {
-        case .overdue:      return "overdue"
-        case .someday:      return "someday"
-        case .day(let d):   return "day:\(SectionMapper.idFormatter.string(from: d))"
+        case .overdue:    return "overdue"
+        case .someday:    return "someday"
+        case .day(let d): return "day:\(SectionMapper.idFormatter.string(from: d))"
+        }
+    }
+
+    // MARK: - Decoding helpers (used by TodoStore for drag/drop)
+
+    /// The date embedded in a day-section ID, or nil for overdue/someday.
+    static func date(from sectionID: String) -> Date? {
+        guard sectionID.hasPrefix("day:") else { return nil }
+        return idFormatter.date(from: String(sectionID.dropFirst(4)))
+    }
+
+    /// Reverse-map a section ID back to a BucketID for cross-section drag moves.
+    static func bucket(from sectionID: String, clock: BucketClock) -> BucketID? {
+        switch sectionID {
+        case "overdue": return .overdue
+        case "someday": return .someday
+        default:
+            guard let d = date(from: sectionID) else { return nil }
+            return .day(clock.normalizeDay(d))
         }
     }
 }
+

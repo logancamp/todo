@@ -16,7 +16,6 @@ struct TodoItemView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Completion toggle — independent of expand
             Button(action: onToggle) {
                 Image(systemName: todo.isDone ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
@@ -27,7 +26,6 @@ struct TodoItemView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(todo.isDone ? "Mark incomplete" : "Mark complete")
 
-            // Row body — tap to expand
             Button {
                 expandedTodoID = isExpanded ? nil : todo.id
             } label: {
@@ -49,8 +47,6 @@ struct TodoItemView: View {
     }
 }
 
-// MARK: - Sub-views (extracted so @Observable tracks them individually)
-
 private struct TodoItemRow: View {
     let todo: Todo
     let isExpanded: Bool
@@ -64,14 +60,17 @@ private struct TodoItemRow: View {
                     .strikethrough(todo.isDone, color: .secondary)
                     .foregroundStyle(todo.isDone ? .secondary : .primary)
 
+                if !todo.notes.isEmpty && !isExpanded {
+                    Text(todo.notes)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
                 if let due = todo.dueAt {
-                    Label {
-                        Text(due, style: .date)
-                    } icon: {
-                        Image(systemName: "calendar")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(isOverdue(due) && !todo.isDone ? .red : .secondary)
+                    Label { Text(due, style: .date) } icon: { Image(systemName: "calendar") }
+                        .font(.caption)
+                        .foregroundStyle(isOverdue(due) && !todo.isDone ? .red : .secondary)
                 }
             }
 
@@ -79,7 +78,6 @@ private struct TodoItemRow: View {
 
             VStack(alignment: .trailing, spacing: 4) {
                 KindBadge(kind: todo.kind)
-
                 Image(systemName: "chevron.down")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
@@ -101,6 +99,12 @@ private struct TodoItemDetail: View {
         VStack(alignment: .leading, spacing: 8) {
             Divider().padding(.top, 4)
 
+            if !todo.notes.isEmpty {
+                Text(todo.notes)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
             HStack {
                 Label("Created", systemImage: "clock")
                     .font(.caption)
@@ -116,7 +120,6 @@ private struct TodoItemDetail: View {
 
 private struct KindBadge: View {
     let kind: TodoKind
-
     var body: some View {
         Text(kind.rawValue)
             .font(.caption2.weight(.medium))
@@ -125,7 +128,6 @@ private struct KindBadge: View {
             .background(color.opacity(0.12), in: Capsule())
             .foregroundStyle(color)
     }
-
     private var color: Color {
         switch kind {
         case .task:      .blue
@@ -138,13 +140,13 @@ private struct KindBadge: View {
 #Preview("TodoItemView") {
     struct Host: View {
         @State private var expanded: Todo.ID?
-        private let pending = Todo(id: "1", title: "Write SwiftUI previews for all views",
-            isDone: false, kind: .task, dueAt: Date().addingTimeInterval(-86_400),
+        private let pending = Todo(id: "1", title: "Write SwiftUI previews",
+            notes: "Include both light and dark mode", isDone: false, kind: .task,
+            dueAt: Date().addingTimeInterval(-86_400),
             createdAt: Date().addingTimeInterval(-7_200), updatedAt: Date(), ownerUid: "p")
         private let done = Todo(id: "2", title: "Buy groceries",
             isDone: true, kind: .reminder, dueAt: nil,
             createdAt: Date().addingTimeInterval(-3_600), updatedAt: Date(), ownerUid: "p")
-
         var body: some View {
             VStack(spacing: 0) {
                 TodoItemView(todo: pending, expandedTodoID: $expanded)
