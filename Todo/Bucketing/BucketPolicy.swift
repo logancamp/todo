@@ -8,31 +8,36 @@
 
 import Foundation
 
-public struct BucketPolicy {
-    public let clock: BucketClock
-    public init(clock: BucketClock) { self.clock = clock }
+struct BucketPolicy {
+    let clock: BucketClock
+    init(clock: BucketClock) { self.clock = clock }
 
-    public func bucket(for t: Todo) -> BucketID {
+    // Static formatter — allocated once, not on every call
+    private static let dayFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateStyle = .full
+        df.timeStyle = .none
+        return df
+    }()
+
+    func bucket(for t: Todo) -> BucketID {
         guard let due = t.dueAt else { return .someday }
         return clock.isPastDay(due) ? .overdue : .day(clock.normalizeDay(due))
     }
 
-    public func title(for b: BucketID) -> String {
+    func title(for b: BucketID) -> String {
         switch b {
-        case .overdue: return "Overdue"
-        case .someday: return "Someday"
-        case .day(let d):
-            let df = DateFormatter(); df.dateStyle = .full; df.timeStyle = .none
-            return df.string(from: d)
+        case .overdue:      return "Overdue"
+        case .someday:      return "Someday"
+        case .day(let d):   return BucketPolicy.dayFormatter.string(from: d)
         }
     }
 
-    // Apply when user drags an item into a different section
-    public func mutateOnMove(_ todo: inout Todo, to bucket: BucketID) {
+    func mutateOnMove(_ todo: inout Todo, to bucket: BucketID) {
         switch bucket {
-        case .overdue: todo.dueAt = clock.startOfDay(clock.now())
-        case .someday: todo.dueAt = nil
-        case .day(let d): todo.dueAt = d
+        case .overdue:      todo.dueAt = clock.startOfDay(clock.now())
+        case .someday:      todo.dueAt = nil
+        case .day(let d):   todo.dueAt = d
         }
         todo.updatedAt = Date()
     }

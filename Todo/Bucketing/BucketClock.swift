@@ -8,15 +8,15 @@
 
 import Foundation
 
-public struct BucketClock {
-    public var now: () -> Date = { Date() }
-    public var cal: Calendar = {
+struct BucketClock {
+    var now: () -> Date = { Date() }
+    var cal: Calendar = {
         var c = Calendar.current
         c.timeZone = .current
         return c
     }()
 
-    public func startOfDay(_ d: Date) -> Date { cal.startOfDay(for: d) }
-    public func normalizeDay(_ d: Date) -> Date { startOfDay(d) }
-    public func isPastDay(_ d: Date) -> Bool { startOfDay(d) < startOfDay(now()) }
+    func startOfDay(_ d: Date) -> Date { cal.startOfDay(for: d) }
+    func normalizeDay(_ d: Date) -> Date { startOfDay(d) }
+    func isPastDay(_ d: Date) -> Bool { startOfDay(d) < startOfDay(now()) }
 }

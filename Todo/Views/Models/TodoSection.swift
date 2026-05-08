@@ -5,9 +5,10 @@
 //  Created by Logan Camp on 10/18/25.
 //
 
+import Foundation
 
-public struct TodoSection: Hashable {
-    public let id: String
-    public let title: String
-    public var items: [Todo]
+struct TodoSection: Identifiable, Hashable {
+    let id: String
+    let title: String
+    var items: [Todo]
 }

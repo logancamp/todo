@@ -1,92 +1,81 @@
 import Foundation
-import SwiftUI
 
 #if DEBUG
 
 extension TodoStore {
     static var preview: TodoStore {
-        let repo = InMemoryAppRepository()
         let session = PreviewSession(uid: "preview-user")
-
-        // Use your real concrete bucketing deps (minimal wiring)
+        let repo = InMemoryAppRepository()
         let policy = BucketPolicy(clock: BucketClock())
-        let bucketizer = Bucketizer(policy: policy)
-        let mapper = SectionMapper(policy: policy)
-
         let store = TodoStore(
             repo: repo,
             session: session,
-            bucketizer: bucketizer,
-            mapper: mapper,
+            bucketizer: Bucketizer(policy: policy),
+            mapper: SectionMapper(policy: policy),
             validator: Validator()
         )
-
-        repo.seed(sampleTodos(ownerUid: session.uid ?? "preview-user"))
+        repo.seed(sampleTodos(ownerUid: "preview-user"))
         return store
     }
 }
 
-struct PreviewSession: SessionProviding {
+@MainActor
+final class PreviewSession: SessionProviding {
     let uid: String?
+    init(uid: String?) { self.uid = uid }
 }
 
 final class InMemoryAppRepository: AppRepository {
     private var todos: [Todo] = []
-    private var continuation: AsyncStream<[Todo]>.Continuation?
+    private var continuations: [AsyncStream<[Todo]>.Continuation] = []
+    private var activeFilter: TodoFilter = .all
+    private var activeUID: String = ""
 
     func streamTodos(uid: String, filter: TodoFilter) -> AsyncStream<[Todo]> {
-        AsyncStream { cont in
-            self.continuation = cont
-            cont.yield(self.apply(filter: filter, to: self.todos, uid: uid))
+        activeUID = uid
+        activeFilter = filter
+        return AsyncStream { cont in
+            self.continuations.append(cont)
+            cont.yield(self.filtered(uid: uid, filter: filter))
         }
     }
 
     func create(uid: String, title: String, kind: TodoKind, dueAt: Date?) async throws -> Todo {
         let now = Date()
-        let new = Todo(
-            id: UUID().uuidString,
-            title: title,
-            isDone: false,
-            kind: kind,
-            dueAt: dueAt,
-            createdAt: now,
-            updatedAt: now,
-            ownerUid: uid
-        )
+        let new = Todo(id: UUID().uuidString, title: title, isDone: false, kind: kind,
+                       dueAt: dueAt, createdAt: now, updatedAt: now, ownerUid: uid)
         todos.insert(new, at: 0)
-        publish(for: uid, filter: .all)
+        broadcast()
         return new
     }
 
     func update(uid: String, todo: Todo) async throws {
-        if let idx = todos.firstIndex(where: { $0.id == todo.id }) {
-            todos[idx] = todo
-        } else {
-            todos.insert(todo, at: 0)
-        }
-        publish(for: uid, filter: .all)
+        if let idx = todos.firstIndex(where: { $0.id == todo.id }) { todos[idx] = todo }
+        else { todos.insert(todo, at: 0) }
+        broadcast()
     }
 
     func delete(uid: String, id: String) async throws {
         todos.removeAll { $0.id == id }
-        publish(for: uid, filter: .all)
+        broadcast()
     }
 
     func seed(_ initial: [Todo]) {
-        self.todos = initial
-        continuation?.yield(initial)
+        todos = initial
+        broadcast()
     }
 
-    private func publish(for uid: String, filter: TodoFilter) {
-        continuation?.yield(apply(filter: filter, to: todos, uid: uid))
+    private func broadcast() {
+        let result = filtered(uid: activeUID, filter: activeFilter)
+        continuations.forEach { $0.yield(result) }
     }
 
-    private func apply(filter: TodoFilter, to todos: [Todo], uid: String) -> [Todo] {
+    private func filtered(uid: String, filter: TodoFilter) -> [Todo] {
         let mine = todos.filter { $0.ownerUid == uid }
         switch filter {
-        case .all: return mine
+        case .all:       return mine
         case .completed: return mine.filter { $0.isDone }
-        case .pending: return mine.filter { !$0.isDone }
+        case .pending:   return mine.filter { !$0.isDone }
         }
     }
 }
@@ -95,12 +84,16 @@ private func sampleTodos(ownerUid: String) -> [Todo] {
     let now = Date()
     return [
         Todo(id: "t1", title: "Buy groceries", isDone: false, kind: .task, dueAt: nil,
-             createdAt: now.addingTimeInterval(-3600), updatedAt: now.addingTimeInterval(-1800), ownerUid: ownerUid),
-        Todo(id: "t2", title: "Finish writeup", isDone: false, kind: .reminder, dueAt: now.addingTimeInterval(3600 * 6),
-             createdAt: now.addingTimeInterval(-7200), updatedAt: now.addingTimeInterval(-3600), ownerUid: ownerUid),
+             createdAt: now.addingTimeInterval(-3_600), updatedAt: now.addingTimeInterval(-1_800), ownerUid: ownerUid),
+        Todo(id: "t2", title: "Finish writeup", isDone: false, kind: .reminder,
+             dueAt: now.addingTimeInterval(3_600 * 6),
+             createdAt: now.addingTimeInterval(-7_200), updatedAt: now.addingTimeInterval(-3_600), ownerUid: ownerUid),
         Todo(id: "t3", title: "Stretch (2 min)", isDone: true, kind: .task, dueAt: nil,
-             createdAt: now.addingTimeInterval(-86400), updatedAt: now.addingTimeInterval(-40000), ownerUid: ownerUid)
+             createdAt: now.addingTimeInterval(-86_400), updatedAt: now.addingTimeInterval(-40_000), ownerUid: ownerUid),
+        Todo(id: "t4", title: "Review PR", isDone: false, kind: .checklist,
+             dueAt: now.addingTimeInterval(-3_600),
+             createdAt: now.addingTimeInterval(-10_000), updatedAt: now.addingTimeInterval(-5_000), ownerUid: ownerUid),
     ]
 }
 
-#endif
+#endif // DEBUG

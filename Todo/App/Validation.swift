@@ -7,22 +7,28 @@
 
 import Foundation
 
-public struct ValidationError: LocalizedError, Equatable {
-    public let message: String
-    public var errorDescription: String? { message }
-    public init(_ message: String) { self.message = message }
+struct ValidationError: LocalizedError, Equatable {
+    let message: String
+    var errorDescription: String? { message }
+    init(_ message: String) { self.message = message }
 }
 
-public struct TodoDraft { public var title: String; public var kind: TodoKind; public var dueAt: Date? }
-public struct TodoPatch { public var title: String?; public var dueAt: Date??; public var isDone: Bool? }
+struct TodoDraft { var title: String; var kind: TodoKind; var dueAt: Date? }
+struct TodoPatch  { var title: String?; var dueAt: Date??; var isDone: Bool? }
 
-public struct Validator {
-    let cal: Calendar = { var c = Calendar.current; c.timeZone = .current; return c }()
-    let now: () -> Date = { Date() }
+struct Validator {
+    var cal: Calendar
+    var now: () -> Date
 
-    public func validateDraft(_ d: TodoDraft) throws {
+    init(calendar: Calendar = .current, now: @escaping () -> Date = { Date() }) {
+        self.cal = calendar
+        self.now = now
+    }
+
+    func validateDraft(_ d: TodoDraft) throws {
         let t = d.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { throw ValidationError("Title can’t be empty.") }
+        guard !t.isEmpty else { throw ValidationError("Title can't be empty.") }
+        guard t.count <= 500 else { throw ValidationError("Title must be 500 characters or fewer.") }
         if let due = d.dueAt {
             let lo = cal.date(byAdding: .year, value: -5, to: now())!
             let hi = cal.date(byAdding: .year, value: +5, to: now())!
@@ -30,10 +36,11 @@ public struct Validator {
         }
     }
 
-    public func validatePatch(_ p: TodoPatch) throws {
-        if let t = p.title, t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            throw ValidationError("Title can’t be empty.")
+    func validatePatch(_ p: TodoPatch) throws {
+        if let t = p.title {
+            let trimmed = t.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { throw ValidationError("Title can't be empty.") }
+            guard trimmed.count <= 500 else { throw ValidationError("Title must be 500 characters or fewer.") }
         }
-        // add dueAt range check if needed (same as above)
     }
 }

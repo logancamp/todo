@@ -8,28 +8,28 @@
 import SwiftUI
 
 struct VerifyEmailView: View {
-    @EnvironmentObject var session: SessionStore
+    @Environment(SessionStore.self) private var session
 
     var body: some View {
         VStack(spacing: 12) {
-            Text("Verify your email to continue")
+            Text("Verify your email")
                 .font(.headline)
-            Text("We’ve sent a verification link to your email. Open it, then tap the button below.")
+            Text("We've sent a verification link to your email. Open it, then tap the button below.")
                 .multilineTextAlignment(.center)
                 .font(.subheadline)
 
             if let err = session.lastError {
                 Text(err.localizedDescription)
-                    .foregroundColor(.red)
+                    .foregroundStyle(.red)
                     .font(.footnote)
             }
 
             HStack {
-                Button("Resend Email") {
-                    Task { try? await session.sendEmailVerification() }
+                Button("Resend email") {
+                    Task { do { try await session.sendEmailVerification() } catch { } }
                 }
-                Button("I Verified") {
-                    Task { try? await session.reloadUser() }
+                Button("I verified") {
+                    Task { do { try await session.reloadUser() } catch { } }
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -38,14 +38,11 @@ struct VerifyEmailView: View {
     }
 }
 
-#Preview("VerifyEmailView – Error") {
+#Preview("VerifyEmailView – error") {
     let session = SessionStore()
     session.lastError = NSError(
-        domain: "Preview",
-        code: 1,
-        userInfo: [NSLocalizedDescriptionKey: "Couldn’t send verification email."]
+        domain: "Preview", code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "Couldn't send verification email."]
     )
-
-    return VerifyEmailView()
-        .environmentObject(session)
+    return VerifyEmailView().environment(session)
 }

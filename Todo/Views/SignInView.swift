@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct SignInView: View {
-    @EnvironmentObject var session: SessionStore
+    @Environment(SessionStore.self) private var session
     @State private var email = ""
     @State private var password = ""
     @State private var isSignUp = false
@@ -16,28 +16,39 @@ struct SignInView: View {
     var body: some View {
         VStack(spacing: 16) {
             Picker("", selection: $isSignUp) {
-                Text("Sign In").tag(false)
-                Text("Sign Up").tag(true)
+                Text("Sign in").tag(false)
+                Text("Sign up").tag(true)
             }
             .pickerStyle(.segmented)
+            .onChange(of: isSignUp) {
+                session.lastError = nil   // clear stale error when switching tabs
+            }
 
             TextField("Email", text: $email)
                 .textContentType(.emailAddress)
                 .keyboardType(.emailAddress)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+
             SecureField("Password", text: $password)
+                .textContentType(isSignUp ? .newPassword : .password)
 
             if let err = session.lastError {
                 Text(err.localizedDescription)
-                    .foregroundColor(.red)
+                    .foregroundStyle(.red)
                     .font(.footnote)
             }
 
-            Button(isSignUp ? "Create Account" : "Sign In") {
+            Button(isSignUp ? "Create account" : "Sign in") {
                 Task {
-                    if isSignUp {
-                        try? await session.signUp(email: email, password: password)
-                    } else {
-                        try? await session.signIn(email: email, password: password)
+                    do {
+                        if isSignUp {
+                            try await session.signUp(email: email, password: password)
+                        } else {
+                            try await session.signIn(email: email, password: password)
+                        }
+                    } catch {
+                        // session.lastError already set by store
                     }
                 }
             }
@@ -45,8 +56,10 @@ struct SignInView: View {
             .disabled(email.isEmpty || password.isEmpty)
 
             if !isSignUp {
-                Button("Forgot Password?") {
-                    Task { try? await session.sendPasswordReset(email: email) }
+                Button("Forgot password?") {
+                    Task {
+                        do { try await session.sendPasswordReset(email: email) } catch { }
+                    }
                 }
                 .font(.footnote)
             }
@@ -56,14 +69,11 @@ struct SignInView: View {
     }
 }
 
-#Preview("SignInView – Error") {
+#Preview("SignInView – error") {
     let session = SessionStore()
     session.lastError = NSError(
-        domain: "Preview",
-        code: 1,
+        domain: "Preview", code: 1,
         userInfo: [NSLocalizedDescriptionKey: "Invalid email or password"]
     )
-
-    return SignInView()
-        .environmentObject(session)
+    return SignInView().environment(session)
 }

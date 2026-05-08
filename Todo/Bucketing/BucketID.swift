@@ -8,8 +8,8 @@
 
 import Foundation
 
-public enum BucketID: Hashable {
+enum BucketID: Hashable {
     case overdue
-    case day(Date)   // normalized to startOfDay
+    case day(Date)   // always normalized to startOfDay
     case someday
 }

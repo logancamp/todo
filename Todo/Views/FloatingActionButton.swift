@@ -14,22 +14,19 @@ struct FloatingActionButton: View {
     var body: some View {
         Button(action: onTap) {
             Image(systemName: systemImage)
-                .font(.system(size: 20, weight: .bold))
+                .font(.title3.bold())   // Dynamic Type — no fixed point size
                 .padding(18)
         }
         .background(.ultraThinMaterial)
         .clipShape(Circle())
         .shadow(radius: 8)
-        .accessibilityLabel(Text("Add"))
+        .accessibilityLabel("Add")
     }
 }
 
-#Preview("FloatingActionButton – Light") {
+#Preview("FloatingActionButton") {
     ZStack {
-        Color.white
-            .ignoresSafeArea()
-
+        Color(.systemBackground).ignoresSafeArea()
         FloatingActionButton(systemImage: "plus") { }
     }
-    .preferredColorScheme(.light)
 }

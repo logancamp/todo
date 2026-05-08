@@ -7,27 +7,28 @@
 
 import Foundation
 
-public struct SectionMapper {
-    public let policy: BucketPolicy
-    public init(policy: BucketPolicy) { self.policy = policy }
+struct SectionMapper {
+    let policy: BucketPolicy
+    init(policy: BucketPolicy) { self.policy = policy }
 
-    public func map(_ groups: [BucketGroup]) -> [TodoSection] {
+    // Static formatter — allocated once
+    private static let idFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        return df
+    }()
+
+    func map(_ groups: [BucketGroup]) -> [TodoSection] {
         groups.map { g in
-            TodoSection(
-                id: sectionID(g.id),
-                title: policy.title(for: g.id),
-                items: g.todos
-            )
+            TodoSection(id: sectionID(g.id), title: policy.title(for: g.id), items: g.todos)
         }
     }
 
     private func sectionID(_ b: BucketID) -> String {
         switch b {
-        case .overdue: return "overdue"
-        case .someday: return "someday"
-        case .day(let d):
-            let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
-            return "day:\(df.string(from: d))"
+        case .overdue:      return "overdue"
+        case .someday:      return "someday"
+        case .day(let d):   return "day:\(SectionMapper.idFormatter.string(from: d))"
         }
     }
 }

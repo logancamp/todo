@@ -21,15 +21,12 @@ final class FirebaseAppRepository: AppRepository {
     func streamTodos(uid: String, filter: TodoFilter) -> AsyncStream<[Todo]> {
         client.listenTodos(uid: uid, filter: filter)
     }
-    
     func create(uid: String, title: String, kind: TodoKind, dueAt: Date?) async throws -> Todo {
         try await client.createTodo(uid: uid, title: title, kind: kind, dueAt: dueAt)
     }
-    
     func update(uid: String, todo: Todo) async throws {
         try await client.updateTodo(uid: uid, todo: todo)
     }
-    
     func delete(uid: String, id: String) async throws {
         try await client.deleteTodo(uid: uid, id: id)
     }

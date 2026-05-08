@@ -5,72 +5,72 @@
 //  Created by Logan Camp on 9/15/25.
 //
 
+import Observation
 import FirebaseAuth
-import Combine
 
+@Observable
 @MainActor
-final class SessionStore: ObservableObject {
-    enum State {
-        case signedOut
+final class SessionStore {
+    enum AuthState {
         case pending
+        case signedOut
         case signedIn(verified: Bool)
     }
 
-    private var authStateHandle: AuthStateDidChangeListenerHandle?
-    private let auth: AuthClient
+    private(set) var state: AuthState = .pending
+    private(set) var uid: String?
+    private(set) var email: String?
+    var lastError: Error?
 
-    @Published var state: State = .signedOut
-    @Published var uid: String? = nil
-    @Published var email: String? = nil
-    @Published var lastError: Error? = nil
+    @ObservationIgnored
+    private var authStateHandle: AuthStateDidChangeListenerHandle?
+
+    private let auth: AuthClient
 
     init(auth: AuthClient = FirebaseClient()) {
         self.auth = auth
-        self.authStateHandle = auth.addAuthListener { [weak self] user in
-            Task { @MainActor in
+        authStateHandle = auth.addAuthListener { [weak self] user in
+            Task { @MainActor [weak self] in
                 self?.apply(user: user)
             }
         }
-        self.apply(user: auth.currentUser)
+        apply(user: auth.currentUser)
     }
 
     deinit {
-        if let handle = authStateHandle {
-            auth.removeAuthListener(handle)
+        MainActor.assumeIsolated {
+            if let handle = authStateHandle {
+                auth.removeAuthListener(handle)
+            }
         }
     }
 
-    // TODO: Session Methods:
+    // MARK: - Auth actions
+
     func signUp(email: String, password: String) async throws {
+        lastError = nil
         state = .pending
-        defer {
-            // if listener didn’t fire, fall back based on current user
-            let u = auth.currentUser
-            state = (u != nil) ? .signedIn(verified: u?.isEmailVerified ?? false) : .signedOut
-        }
         do {
             _ = try await auth.signUp(email: email, password: password)
             try? await auth.reloadUser()
-            apply(user: auth.currentUser)          // listener should also call apply()
-            // optional: try? await auth.sendEmailVerification()
+            apply(user: auth.currentUser)
         } catch {
             lastError = error
+            state = .signedOut
             throw error
         }
     }
 
     func signIn(email: String, password: String) async throws {
+        lastError = nil
         state = .pending
-        defer {
-            let u = auth.currentUser
-            state = (u != nil) ? .signedIn(verified: u?.isEmailVerified ?? false) : .signedOut
-        }
         do {
             _ = try await auth.signIn(email: email, password: password)
             try? await auth.reloadUser()
             apply(user: auth.currentUser)
         } catch {
             lastError = error
+            state = .signedOut
             throw error
         }
     }
@@ -84,29 +84,16 @@ final class SessionStore: ObservableObject {
             throw error
         }
     }
-    
-    func sendEmailVerification() async throws {
-        guard let user = auth.currentUser else {
-            print("[DEBUG] No current user, cannot send verification.")
-            let err = NSError(domain: "SessionStore", code: 1,
-                              userInfo: [NSLocalizedDescriptionKey: "No signed-in user"])
-            lastError = err
-            throw err
-        }
-        print("[DEBUG] Attempting to send verification. uid:", user.uid,
-              "email:", user.email ?? "nil",
-              "verified:", user.isEmailVerified)
 
+    func sendEmailVerification() async throws {
         do {
-            try await user.sendEmailVerification()
-            print("[DEBUG] Verification request sent successfully (Firebase accepted).")
+            try await auth.sendEmailVerification()
         } catch {
-            print("[DEBUG] sendEmailVerification threw error:", error)
             lastError = error
             throw error
         }
     }
-    
+
     func reloadUser() async throws {
         do {
             try await auth.reloadUser()
@@ -116,13 +103,18 @@ final class SessionStore: ObservableObject {
             throw error
         }
     }
-    
+
     func sendPasswordReset(email: String) async throws {
-        do { try await auth.sendPasswordReset(email: email) }
-        catch { lastError = error; throw error }
+        do {
+            try await auth.sendPasswordReset(email: email)
+        } catch {
+            lastError = error
+            throw error
+        }
     }
-    
-    // MARK: - Helpers
+
+    // MARK: - Private
+
     private func apply(user: User?) {
         if let u = user {
             uid = u.uid
@@ -136,5 +128,4 @@ final class SessionStore: ObservableObject {
     }
 }
 
-// Isolate the conformance to the main actor to match the type's isolation and avoid Swift 6 data race diagnostics.
-extension SessionStore: @MainActor SessionProviding {}
+extension SessionStore: SessionProviding {}

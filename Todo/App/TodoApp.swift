@@ -13,18 +13,8 @@ import FirebaseAppCheck
 
 @main
 struct TodoApp: App {
-    // Session and repositories
-    @StateObject private var session: SessionStore
-    private let repo: AppRepository
-    private let client: FirebaseClient
-
-    // Dependencies for TodoStore
-    private let policy: BucketPolicy
-    private let bucketizer: Bucketizer
-    private let mapper: SectionMapper
-    private let validator: Validator
-
-    @StateObject private var todoStore: TodoStore
+    @State private var session: SessionStore
+    @State private var todoStore: TodoStore
 
     init() {
         #if DEBUG
@@ -32,48 +22,34 @@ struct TodoApp: App {
         #endif
         FirebaseApp.configure()
 
-        print("Project ID:", FirebaseApp.app()?.options.projectID ?? "nil")
-
-        // Create all dependencies as local constants first
+        let session = SessionStore()
         let client = FirebaseClient()
         let repo: AppRepository = FirebaseAppRepository(client: client)
         let policy = BucketPolicy(clock: BucketClock())
-        let bucketizer = Bucketizer(policy: policy)
-        let mapper = SectionMapper(policy: policy)
-        let validator = Validator()
-        let session = SessionStore()
-
-        // Initialize StateObjects with wrappedValue without capturing self
-        _session = StateObject(wrappedValue: session)
-        _todoStore = StateObject(wrappedValue: TodoStore(
+        let store = TodoStore(
             repo: repo,
             session: session,
-            bucketizer: bucketizer,
-            mapper: mapper,
-            validator: validator
-        ))
-
-        // Assign non-StateObject stored properties
-        self.client = client
-        self.repo = repo
-        self.policy = policy
-        self.bucketizer = bucketizer
-        self.mapper = mapper
-        self.validator = validator
+            bucketizer: Bucketizer(policy: policy),
+            mapper: SectionMapper(policy: policy),
+            validator: Validator()
+        )
+        _session = State(initialValue: session)
+        _todoStore = State(initialValue: store)
     }
-    
+
     var body: some Scene {
         WindowGroup {
             RootGate()
-                .environmentObject(session)
-                .environmentObject(todoStore)
+                .environment(session)
+                .environment(todoStore)
         }
     }
 }
 
-// Gate struct for session navigation
+// MARK: - Root navigation gate
+
 struct RootGate: View {
-    @EnvironmentObject var session: SessionStore
+    @Environment(SessionStore.self) private var session
 
     var body: some View {
         switch session.state {
@@ -81,13 +57,13 @@ struct RootGate: View {
             SignInView()
         case .signedIn(let verified):
             if verified {
-                TodoListScreen() // replace with your TodoList later
+                TodoListScreen()
             } else {
                 VerifyEmailView()
             }
         case .pending:
-            ProgressView("Loading…")   // loading spinner
-                .progressViewStyle(CircularProgressViewStyle())
+            ProgressView("Loading…")
+                .progressViewStyle(.circular)
         }
     }
 }

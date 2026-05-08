@@ -7,27 +7,22 @@
 
 import Foundation
 
-public enum TodoFilter {
-    case all
-    case completed
-    case pending
+enum TodoFilter {
+    case all, completed, pending
 }
 
-public enum TodoKind: String, Codable, CaseIterable, Identifiable {
-    case task
-    case reminder
-    case checklist
-    
-    public var id: String { rawValue }
+enum TodoKind: String, Codable, CaseIterable, Identifiable {
+    case task, reminder, checklist
+    var id: String { rawValue }
 }
 
-public struct Todo: Identifiable, Codable, Equatable, Hashable {
-    public var id: String
-    public var title: String
-    public var isDone: Bool
-    public var kind: TodoKind
-    public var dueAt: Date?
-    public var createdAt: Date
-    public var updatedAt: Date
-    public var ownerUid: String
+struct Todo: Identifiable, Codable, Equatable, Hashable {
+    var id: String
+    var title: String
+    var isDone: Bool
+    var kind: TodoKind
+    var dueAt: Date?
+    var createdAt: Date
+    var updatedAt: Date
+    var ownerUid: String
 }

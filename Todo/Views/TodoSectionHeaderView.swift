@@ -12,7 +12,7 @@ struct TodoSectionHeaderView: View {
 
     var body: some View {
         HStack {
-            Text(titleText)
+            Text(section.title.isEmpty ? section.id : section.title)
                 .font(.headline)
             Spacer()
             Text("\(section.items.count)")
@@ -20,48 +20,8 @@ struct TodoSectionHeaderView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 8)
-        .contentShape(Rectangle())
-    }
-
-    private var titleText: String {
-        section.title.isEmpty
-            ? String(describing: section.id)
-            : section.title
-    }
-}
-
-#Preview("TodoSectionHeaderView") {
-    let sampleTodos = [
-        Todo(
-            id: "t1",
-            title: "Buy groceries",
-            isDone: false,
-            kind: .task,
-            dueAt: nil,
-            createdAt: Date(),
-            updatedAt: Date(),
-            ownerUid: "preview-user"
-        ),
-        Todo(
-            id: "t2",
-            title: "Finish writeup",
-            isDone: true,
-            kind: .task,
-            dueAt: nil,
-            createdAt: Date(),
-            updatedAt: Date(),
-            ownerUid: "preview-user"
-        )
-    ]
-
-    let section = TodoSection(
-        id: "today",
-        title: "Today",
-        items: sampleTodos
-    )
-
-    return VStack(alignment: .leading, spacing: 0) {
-        TodoSectionHeaderView(section: section)
-            .padding(.horizontal)
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background)  // FIX: opaque background blocks cells scrolling behind
     }
 }
