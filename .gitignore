@@ -1,0 +1,22 @@
+# Xcode
+xcuserdata/
+DerivedData/
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# SPM / Firebase
+.build/
+*.xcframework
+Pods/
+
+# Swift Package resolved — commit this if you want reproducible builds
+# .package.resolved
