@@ -27,6 +27,8 @@ final class TodoStore {
     private let mapper: SectionMapper
     private let validator: Validator
     private var streamTask: Task<Void, Never>?
+    private var activeFilter: TodoFilter = .all
+    private var ordersRepaired = false   // run repair only once per session
 
     init(
         repo: AppRepository,
@@ -42,6 +44,7 @@ final class TodoStore {
     // MARK: - Stream
 
     func start(filter: TodoFilter = .all) {
+        activeFilter = filter
         guard let uid = session.uid else { items = []; sections = []; return }
         streamTask?.cancel()
         streamTask = Task { [weak self] in
@@ -49,6 +52,13 @@ final class TodoStore {
             for await snapshot in repo.streamTodos(uid: uid, filter: filter) {
                 self.items = snapshot
                 self.recomputeSections()
+
+                // One-time repair of duplicate order keys (items added before
+                // fractional indexing existed all share the same default "n")
+                if !self.ordersRepaired {
+                    self.ordersRepaired = true
+                    await self.repairDuplicateOrders(uid: uid)
+                }
             }
         }
     }
@@ -61,39 +71,37 @@ final class TodoStore {
     func add(
         title: String,
         kind: TodoKind = .task,
+        scheduledFor: Date? = nil,
         dueAt: Date? = nil,
         notes: String = "",
-        insertBeforeOrder: String? = nil   // order of current first item in target section
+        insertBeforeOrder: String? = nil
     ) async {
         guard let uid = session.uid else { return }
         do {
-            try validator.validateDraft(.init(title: title, kind: kind, dueAt: dueAt))
+            try validator.validateDraft(.init(title: title, kind: kind, dueAt: scheduledFor))
             loading = true; defer { loading = false }
             let order = FractionalIndex.between(nil, insertBeforeOrder)
-            _ = try await repo.create(uid: uid, title: title, notes: notes, kind: kind, dueAt: dueAt, order: order)
+            _ = try await repo.create(
+                uid: uid, title: title, notes: notes, kind: kind,
+                scheduledFor: scheduledFor, dueAt: dueAt, order: order
+            )
         } catch { lastError = error }
     }
 
-    func rename(_ id: String, to newTitle: String) async {
-        guard let uid = session.uid, var todo = items.first(where: { $0.id == id }) else { return }
+    func update(_ id: String, title: String, notes: String, kind: TodoKind, scheduledFor: Date?, dueAt: Date?) async {
+        guard let uid = session.uid,
+              var todo = items.first(where: { $0.id == id }) else { return }
         do {
-            try validator.validatePatch(.init(title: newTitle, dueAt: nil, isDone: nil))
-            todo.title = newTitle; todo.updatedAt = Date()
-            await upsert(uid: uid, todo)
-        } catch { lastError = error }
-    }
-
-    func setDueDate(_ id: String, to newDate: Date?) async {
-        guard let uid = session.uid, var todo = items.first(where: { $0.id == id }) else { return }
-        do {
-            try validator.validatePatch(.init(title: nil, dueAt: .some(newDate), isDone: nil))
-            todo.dueAt = newDate; todo.updatedAt = Date()
+            try validator.validatePatch(.init(title: title, dueAt: .some(scheduledFor), isDone: nil))
+            todo.title = title; todo.notes = notes; todo.kind = kind
+            todo.scheduledFor = scheduledFor; todo.dueAt = dueAt; todo.updatedAt = Date()
             await upsert(uid: uid, todo)
         } catch { lastError = error }
     }
 
     func toggle(_ id: String, to done: Bool) async {
-        guard let uid = session.uid, var todo = items.first(where: { $0.id == id }) else { return }
+        guard let uid = session.uid,
+              var todo = items.first(where: { $0.id == id }) else { return }
         todo.isDone = done; todo.updatedAt = Date()
         await upsert(uid: uid, todo)
     }
@@ -107,42 +115,73 @@ final class TodoStore {
 
     // MARK: - Drag/drop reorder
 
-    /// Move `id` to after `afterID` in `sectionID`.
-    /// Pass nil `afterID` to place at the top of the section.
-    /// Automatically updates dueAt when moving across sections.
-    func reorder(id: String, afterID: String?, inSectionID: String) async {
+    func reorder(id: String, afterID: String?, beforeID: String?, inSectionID: String) async {
         guard let uid = session.uid,
-              var todo = items.first(where: { $0.id == id }) else { return }
+              let itemIdx = items.firstIndex(where: { $0.id == id }) else { return }
 
-        // Peers = section items excluding the dragged item
-        let peers = sections
-            .first(where: { $0.id == inSectionID })?.items
-            .filter { $0.id != id } ?? []
+        var todo = items[itemIdx]
 
-        let afterIdx = afterID.flatMap { aid in peers.firstIndex(where: { $0.id == aid }) }
-        let lo: String? = afterIdx.map { peers[$0].order }
-        let hi: String? = {
-            if let idx = afterIdx {
-                return idx + 1 < peers.count ? peers[idx + 1].order : nil
-            }
-            return peers.first?.order   // inserting at top → hi is current first item
-        }()
+        let lo: String? = afterID.flatMap { aid in items.first(where: { $0.id == aid })?.order }
+        let hi: String? = beforeID.flatMap { bid in items.first(where: { $0.id == bid })?.order }
 
         todo.order = FractionalIndex.between(lo, hi)
 
-        // Cross-section move: update dueAt via bucket policy
         if let bucket = SectionMapper.bucket(from: inSectionID, clock: bucketizer.policy.clock) {
             bucketizer.policy.mutateOnMove(&todo, to: bucket)
         }
-
         todo.updatedAt = Date()
+
+        items[itemIdx] = todo
+        recomputeSections()
+
+        stop()
         await upsert(uid: uid, todo)
+        start(filter: activeFilter)
     }
 
     func moveItem(_ id: String, to target: BucketID) async {
-        guard let uid = session.uid, var todo = items.first(where: { $0.id == id }) else { return }
+        guard let uid = session.uid,
+              var todo = items.first(where: { $0.id == id }) else { return }
         bucketizer.policy.mutateOnMove(&todo, to: target)
         await upsert(uid: uid, todo)
+    }
+
+    // MARK: - Order repair
+    // Items created before fractional indexing all have order "n".
+    // This runs once per session, detects duplicates, assigns unique
+    // evenly-spaced orders, and saves them back to Firestore silently.
+
+    private func repairDuplicateOrders(uid: String) async {
+        let allOrders = items.map(\.order)
+        guard Set(allOrders).count != allOrders.count else { return }  // no duplicates, skip
+
+        var toUpdate: [Todo] = []
+
+        for section in sections {
+            // Sort by current order so relative positions are preserved
+            let sectionItems = section.items.sorted { $0.order < $1.order }
+            var prev: String? = nil
+
+            for var item in sectionItems {
+                let newOrder = FractionalIndex.between(prev, nil)
+                if newOrder != item.order {
+                    item.order = newOrder
+                    toUpdate.append(item)
+                    if let idx = items.firstIndex(where: { $0.id == item.id }) {
+                        items[idx] = item
+                    }
+                }
+                prev = newOrder
+            }
+        }
+
+        guard !toUpdate.isEmpty else { return }
+        recomputeSections()
+
+        // Persist repairs to Firestore silently in the background
+        for item in toUpdate {
+            try? await repo.update(uid: uid, todo: item)
+        }
     }
 
     // MARK: - Private
@@ -153,7 +192,7 @@ final class TodoStore {
         catch { lastError = error }
     }
 
-    private func recomputeSections() {
+    func recomputeSections() {
         sections = mapper.map(bucketizer.group(items))
     }
 

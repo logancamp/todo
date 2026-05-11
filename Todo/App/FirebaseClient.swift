@@ -9,8 +9,6 @@ import Foundation
 import FirebaseAuth
 import FirebaseFirestore
 
-// MARK: - Auth protocol
-
 protocol AuthClient {
     var currentUser: User? { get }
     var uid: String? { get }
@@ -27,8 +25,6 @@ protocol AuthClient {
     func reloadUser() async throws
     func sendPasswordReset(email: String) async throws
 }
-
-// MARK: - Firebase auth implementation
 
 final class FirebaseClient: AuthClient {
     var currentUser: User? { Auth.auth().currentUser }
@@ -66,8 +62,6 @@ final class FirebaseClient: AuthClient {
     }
 }
 
-// MARK: - Firestore
-
 extension FirebaseClient {
     private var db: Firestore { Firestore.firestore() }
 
@@ -97,12 +91,13 @@ extension FirebaseClient {
         }
     }
 
-    func createTodo(uid: String, title: String, notes: String, kind: TodoKind, dueAt: Date?, order: String) async throws -> Todo {
+    func createTodo(uid: String, title: String, notes: String, kind: TodoKind, scheduledFor: Date?, dueAt: Date?, order: String) async throws -> Todo {
         let ref = todosCollection(uid: uid).document()
         let now = Date()
         let todo = Todo(
             id: ref.documentID, title: title, notes: notes,
-            isDone: false, kind: kind, dueAt: dueAt,
+            isDone: false, kind: kind,
+            scheduledFor: scheduledFor, dueAt: dueAt,
             createdAt: now, updatedAt: now, ownerUid: uid, order: order
         )
         try ref.setData(from: todo)
@@ -119,4 +114,3 @@ extension FirebaseClient {
 }
 
 private enum AuthError: Error { case noCurrentUser }
-

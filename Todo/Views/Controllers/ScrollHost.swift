@@ -8,7 +8,7 @@
 import SwiftUI
 import UIKit
 
-private let draftID = "__draft__"
+private let draftItemID = "__draft__"
 
 struct TodoScrollHost<Row: View, Header: View>: UIViewRepresentable {
     var sections: [TodoSection]
@@ -18,7 +18,8 @@ struct TodoScrollHost<Row: View, Header: View>: UIViewRepresentable {
     var onCenteredSectionChange: (String) -> Void = { _ in }
     var onSelect: (String) -> Void = { _ in }
     var onDelete: (String) -> Void = { _ in }
-    var onMove: (String, String?, String) -> Void = { _, _, _ in }
+    var onMove: (String, String?, String?, String) -> Void = { _, _, _, _ in }
+    var onBackgroundTap: () -> Void = { }
 
     var draftSectionID: String?
     var draftView: (() -> AnyView)?
@@ -31,7 +32,8 @@ struct TodoScrollHost<Row: View, Header: View>: UIViewRepresentable {
         onCenteredSectionChange: @escaping (String) -> Void = { _ in },
         onSelect: @escaping (String) -> Void = { _ in },
         onDelete: @escaping (String) -> Void = { _ in },
-        onMove: @escaping (String, String?, String) -> Void = { _, _, _ in },
+        onMove: @escaping (String, String?, String?, String) -> Void = { _, _, _, _ in },
+        onBackgroundTap: @escaping () -> Void = { },
         draftSectionID: String? = nil,
         draftView: (() -> AnyView)? = nil,
         @ViewBuilder rowView: @escaping (Todo) -> Row,
@@ -43,6 +45,7 @@ struct TodoScrollHost<Row: View, Header: View>: UIViewRepresentable {
         self.onSelect = onSelect
         self.onDelete = onDelete
         self.onMove = onMove
+        self.onBackgroundTap = onBackgroundTap
         self.draftSectionID = draftSectionID
         self.draftView = draftView
         self.rowView = rowView
@@ -50,7 +53,7 @@ struct TodoScrollHost<Row: View, Header: View>: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> UICollectionView {
-        let cv = UICollectionView(frame: .zero, collectionViewLayout: Layout.make())
+        let cv = UICollectionView(frame: .zero, collectionViewLayout: CollectionLayout.make())
         cv.backgroundColor = .clear
         cv.delegate = context.coordinator
         cv.delaysContentTouches = false
@@ -67,13 +70,20 @@ struct TodoScrollHost<Row: View, Header: View>: UIViewRepresentable {
         cv.dropDelegate = context.coordinator
         cv.dragInteractionEnabled = true
 
+        let bgTap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleBackgroundTap(_:))
+        )
+        bgTap.cancelsTouchesInView = false
+        cv.addGestureRecognizer(bgTap)
+
         DispatchQueue.main.async {
             cv.gestureRecognizers?
                 .compactMap { $0 as? UILongPressGestureRecognizer }
-                .forEach { $0.minimumPressDuration = 0.6 }
+                .forEach { $0.minimumPressDuration = 0.35 }
         }
 
-        context.coordinator.apply(sections: sections, draftSectionID: draftSectionID, animated: false)
+        context.coordinator.applySnapshot(sections: sections, draftSectionID: draftSectionID, animated: false)
         return cv
     }
 
@@ -82,17 +92,16 @@ struct TodoScrollHost<Row: View, Header: View>: UIViewRepresentable {
         context.coordinator.onSelect = onSelect
         context.coordinator.onDelete = onDelete
         context.coordinator.onMove = onMove
+        context.coordinator.onBackgroundTap = onBackgroundTap
         context.coordinator.collapse = $collapse
         context.coordinator.draftView = draftView
-        context.coordinator.applyIfNeeded(sections: sections, draftSectionID: draftSectionID)
+        context.coordinator.applySnapshotIfNeeded(sections: sections, draftSectionID: draftSectionID)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 }
 
 // MARK: - Coordinator
-// All three delegate conformances declared on the class itself.
-// Extensions of nested classes in generic types cannot contain @objc members.
 
 extension TodoScrollHost {
     final class Coordinator: NSObject,
@@ -100,16 +109,21 @@ extension TodoScrollHost {
         UICollectionViewDragDelegate,
         UICollectionViewDropDelegate
     {
-        private(set) weak var collectionView: UICollectionView?
-        private var dataSource: DS!
+        private weak var collectionView: UICollectionView?
+        private var dataSource: SectionDataSource!
         private var lastFingerprint: Int = 0
         private var lastDraftSectionID: String? = nil
+        private var isDragging = false
+        private var lastDragEndTime: Date = .distantPast
+        private var pendingSections: [TodoSection] = []
+        private var pendingDraftSectionID: String? = nil
 
         var collapse: Binding<CGFloat> = .constant(0)
         var onCenteredSectionChange: (String) -> Void = { _ in }
         var onSelect: (String) -> Void = { _ in }
         var onDelete: (String) -> Void = { _ in }
-        var onMove: (String, String?, String) -> Void = { _, _, _ in }
+        var onMove: (String, String?, String?, String) -> Void = { _, _, _, _ in }
+        var onBackgroundTap: () -> Void = { }
         var draftView: (() -> AnyView)?
 
         func install(
@@ -118,10 +132,10 @@ extension TodoScrollHost {
             headerView: @escaping (TodoSection) -> AnyView
         ) {
             collectionView = cv
-            dataSource = DS(collectionView: cv, rowView: rowView, headerView: headerView)
+            dataSource = SectionDataSource(collectionView: cv, rowView: rowView, headerView: headerView)
         }
 
-        func apply(sections: [TodoSection], draftSectionID: String?, animated: Bool) {
+        func applySnapshot(sections: [TodoSection], draftSectionID: String?, animated: Bool) {
             var snap = NSDiffableDataSourceSnapshot<String, String>()
             dataSource.setPayload(sections)
             dataSource.draftView = draftView
@@ -129,25 +143,48 @@ extension TodoScrollHost {
             for s in sections {
                 snap.appendSections([s.id])
                 var ids = s.items.map(\.id)
-                if s.id == draftSectionID { ids.insert(draftID, at: 0) }
+                if s.id == draftSectionID { ids.insert(draftItemID, at: 0) }
                 snap.appendItems(ids, toSection: s.id)
             }
 
-            let existing = Set(dataSource.snapshot().itemIdentifiers)
-            let toReconfigure = sections.flatMap(\.items).map(\.id).filter { existing.contains($0) }
-            if !toReconfigure.isEmpty { snap.reconfigureItems(toReconfigure) }
+            let existingIDs = Set(dataSource.snapshot().itemIdentifiers)
+            let changed = sections.flatMap(\.items).map(\.id).filter { existingIDs.contains($0) }
+            if !changed.isEmpty { snap.reconfigureItems(changed) }
 
             dataSource.apply(snap, animatingDifferences: animated) { [weak self] in
                 self?.updateCenteredSection()
             }
         }
 
-        func applyIfNeeded(sections: [TodoSection], draftSectionID: String?) {
+        func applySnapshotIfNeeded(sections: [TodoSection], draftSectionID: String?) {
+            if isDragging {
+                pendingSections = sections
+                pendingDraftSectionID = draftSectionID
+                return
+            }
+
             let fp = fingerprint(sections, draftSectionID: draftSectionID)
             guard fp != lastFingerprint || draftSectionID != lastDraftSectionID else { return }
             lastFingerprint = fp
             lastDraftSectionID = draftSectionID
-            apply(sections: sections, draftSectionID: draftSectionID, animated: true)
+
+            let incomingIDs = sections.flatMap(\.items).map(\.id)
+            let currentIDs = dataSource.snapshot().itemIdentifiers.filter { $0 != draftItemID }
+            let orderChanged = incomingIDs != currentIDs
+
+            if orderChanged {
+                let animate = Date().timeIntervalSince(lastDragEndTime) > 1.0
+                applySnapshot(sections: sections, draftSectionID: draftSectionID, animated: animate)
+            } else {
+                dataSource.setPayload(sections)
+                var snap = dataSource.snapshot()
+                let toReconfigure = sections.flatMap(\.items).map(\.id)
+                    .filter { dataSource.snapshot().itemIdentifiers.contains($0) }
+                if !toReconfigure.isEmpty {
+                    snap.reconfigureItems(toReconfigure)
+                    dataSource.apply(snap, animatingDifferences: false)
+                }
+            }
         }
 
         private func fingerprint(_ sections: [TodoSection], draftSectionID: String?) -> Int {
@@ -157,32 +194,31 @@ extension TodoScrollHost {
             return h.finalize()
         }
 
-        // MARK: UICollectionViewDelegate — selection
-
-        func collectionView(_ cv: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-            guard let id = dataSource.itemID(at: indexPath), id != draftID else { return }
-            onSelect(id)
+        @objc func handleBackgroundTap(_ gesture: UITapGestureRecognizer) {
+            guard let cv = collectionView else { return }
+            let location = gesture.location(in: cv)
+            if cv.indexPathForItem(at: location) == nil { onBackgroundTap() }
         }
 
-        // MARK: UICollectionViewDelegate — swipe actions
+        // MARK: UICollectionViewDelegate
+
+        func collectionView(_ cv: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+            guard let id = dataSource.itemID(at: indexPath), id != draftItemID else { return }
+            onSelect(id)
+        }
 
         func collectionView(
             _ cv: UICollectionView,
             trailingSwipeActionsConfigurationForItemAt indexPath: IndexPath
         ) -> UISwipeActionsConfiguration? {
-            guard let id = dataSource.itemID(at: indexPath), id != draftID else { return nil }
+            guard let id = dataSource.itemID(at: indexPath), id != draftItemID else { return nil }
             let delete = UIContextualAction(style: .destructive, title: "Delete") { [weak self] _, _, done in
                 self?.onDelete(id); done(true)
             }
-            let more = UIContextualAction(style: .normal, title: "More") { [weak self] _, _, done in
-                self?.onSelect(id); done(true)
-            }
-            let config = UISwipeActionsConfiguration(actions: [delete, more])
-            config.performsFirstActionWithFullSwipe = false
+            let config = UISwipeActionsConfiguration(actions: [delete])
+            config.performsFirstActionWithFullSwipe = true
             return config
         }
-
-        // MARK: UICollectionViewDelegate — scroll
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
             let p = max(0, min(1, scrollView.contentOffset.y / TodoLayout.headerMaxHeight))
@@ -196,9 +232,8 @@ extension TodoScrollHost {
             let candidates = cv.indexPathsForVisibleItems
             guard !candidates.isEmpty else { return }
             let closest = candidates.min {
-                let ay = cv.layoutAttributesForItem(at: $0)?.frame.midY ?? 0
-                let by = cv.layoutAttributesForItem(at: $1)?.frame.midY ?? 0
-                return abs(ay - centerY) < abs(by - centerY)
+                abs((cv.layoutAttributesForItem(at: $0)?.frame.midY ?? 0) - centerY) <
+                abs((cv.layoutAttributesForItem(at: $1)?.frame.midY ?? 0) - centerY)
             }
             let idx = closest?.section ?? candidates.map(\.section).min() ?? 0
             if let sid = dataSource.sectionID(at: idx) { onCenteredSectionChange(sid) }
@@ -206,8 +241,32 @@ extension TodoScrollHost {
 
         // MARK: UICollectionViewDragDelegate
 
-        func collectionView(_ cv: UICollectionView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem] {
-            guard let id = dataSource.itemID(at: indexPath), id != draftID else { return [] }
+        func collectionView(_ cv: UICollectionView, dragSessionWillBegin session: UIDragSession) {
+            isDragging = true
+        }
+
+        func collectionView(_ cv: UICollectionView, dragSessionDidEnd session: UIDragSession) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                guard let self else { return }
+                self.lastDragEndTime = Date()
+                self.isDragging = false
+                let sections = self.pendingSections
+                let draftSectionID = self.pendingDraftSectionID
+                guard !sections.isEmpty else { return }
+                self.lastFingerprint = self.fingerprint(sections, draftSectionID: draftSectionID)
+                self.lastDraftSectionID = draftSectionID
+                self.pendingSections = []
+                self.pendingDraftSectionID = nil
+                self.applySnapshot(sections: sections, draftSectionID: draftSectionID, animated: false)
+            }
+        }
+
+        func collectionView(
+            _ cv: UICollectionView,
+            itemsForBeginning session: UIDragSession,
+            at indexPath: IndexPath
+        ) -> [UIDragItem] {
+            guard let id = dataSource.itemID(at: indexPath) else { return [] }
             let provider = NSItemProvider(object: id as NSString)
             let dragItem = UIDragItem(itemProvider: provider)
             dragItem.localObject = id
@@ -233,42 +292,76 @@ extension TodoScrollHost {
 
         func collectionView(_ cv: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
             guard let item = coordinator.items.first,
-                  let id = item.dragItem.localObject as? String,
-                  id != draftID else { return }
+                  let id = item.dragItem.localObject as? String else { return }
 
             let destPath = coordinator.destinationIndexPath ?? IndexPath(item: 0, section: 0)
-            let sids = dataSource.snapshot().sectionIdentifiers
-            guard destPath.section < sids.count else { return }
+            let sectionIDs = dataSource.snapshot().sectionIdentifiers
+            guard destPath.section < sectionIDs.count else { return }
 
-            let sectionID = sids[destPath.section]
-            let itemsInSection = dataSource.snapshot()
+            let sectionID = sectionIDs[destPath.section]
+
+            let peers = dataSource.snapshot()
                 .itemIdentifiers(inSection: sectionID)
-                .filter { $0 != draftID && $0 != id }
+                .filter { $0 != draftItemID && $0 != id }
 
-            let afterID: String? = destPath.item > 0 ? itemsInSection[safe: destPath.item - 1] : nil
+            let afterID: String? = destPath.item > 0 ? peers[safe: destPath.item - 1] : nil
+            let beforeID: String? = peers[safe: destPath.item]
 
-            onMove(id, afterID, sectionID)
-            coordinator.drop(item.dragItem, toItemAt: destPath)
+            // Update snapshot immediately so UIKit knows the correct new position
+            var snap = dataSource.snapshot()
+            snap.deleteItems([id])
+            if let afterID {
+                snap.insertItems([id], afterItem: afterID)
+            } else {
+                let remaining = snap.itemIdentifiers(inSection: sectionID)
+                if let first = remaining.first {
+                    snap.insertItems([id], beforeItem: first)
+                } else {
+                    snap.appendItems([id], toSection: sectionID)
+                }
+            }
+            dataSource.apply(snap, animatingDifferences: false)
+
+            // Find where the item actually landed after snapshot update
+            var landingPath = destPath
+            let updatedSnap = dataSource.snapshot()
+            outer: for (sIdx, sid) in updatedSnap.sectionIdentifiers.enumerated() {
+                for (iIdx, itemID) in updatedSnap.itemIdentifiers(inSection: sid).enumerated() {
+                    if itemID == id { landingPath = IndexPath(item: iIdx, section: sIdx); break outer }
+                }
+            }
+
+            coordinator.drop(item.dragItem, toItemAt: landingPath)
+            
+            print("=== DROP ===")
+            print("id: \(id)")
+            print("afterID: \(afterID ?? "nil")")
+            print("beforeID: \(beforeID ?? "nil")")
+            print("sectionID: \(sectionID)")
+            print("peers: \(peers)")
+            print("destPath: \(destPath)")
+            
+            onMove(id, afterID, beforeID, sectionID)
         }
     }
 }
 
 // MARK: - Layout
 
-private enum Layout {
+private enum CollectionLayout {
     static func make() -> UICollectionViewLayout {
         let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(60))
         let item = NSCollectionLayoutItem(layoutSize: itemSize)
         let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(60))
         let group = NSCollectionLayoutGroup.vertical(layoutSize: groupSize, subitems: [item])
-
         let section = NSCollectionLayoutSection(group: group)
         section.interGroupSpacing = 8
         section.contentInsets = .init(top: 8, leading: 0, bottom: 24, trailing: 0)
+        section.visibleItemsInvalidationHandler = { _, _, _ in }
 
         let headerSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(44))
         let header = NSCollectionLayoutBoundarySupplementaryItem(
-            layoutSize: headerSize, elementKind: DS.headerKind, alignment: .top
+            layoutSize: headerSize, elementKind: SectionDataSource.headerElementKind, alignment: .top
         )
         header.pinToVisibleBounds = true
         header.zIndex = 2
@@ -280,13 +373,10 @@ private enum Layout {
     }
 }
 
-// MARK: - Reusable supplementary view
-
-private final class SwiftUISupplementaryView: UICollectionReusableView {
-    private var host: UIHostingController<AnyView>?
-
+private final class SectionHeaderView: UICollectionReusableView {
+    private var hostingController: UIHostingController<AnyView>?
     func configure(with view: AnyView) {
-        if let existing = host { existing.rootView = view }
+        if let existing = hostingController { existing.rootView = view }
         else {
             let hc = UIHostingController(rootView: view)
             hc.view.backgroundColor = .clear
@@ -298,16 +388,19 @@ private final class SwiftUISupplementaryView: UICollectionReusableView {
                 hc.view.topAnchor.constraint(equalTo: topAnchor),
                 hc.view.bottomAnchor.constraint(equalTo: bottomAnchor),
             ])
-            host = hc
+            hostingController = hc
         }
     }
 }
 
-// MARK: - Diffable data source
+private final class TodoCell: UICollectionViewCell {
+    override func apply(_ layoutAttributes: UICollectionViewLayoutAttributes) {
+        UIView.performWithoutAnimation { super.apply(layoutAttributes) }
+    }
+}
 
-private final class DS: UICollectionViewDiffableDataSource<String, String> {
-    static let headerKind = "todo.section.header"
-
+private final class SectionDataSource: UICollectionViewDiffableDataSource<String, String> {
+    static let headerElementKind = "todo.section.header"
     private var sectionsByID: [String: TodoSection] = [:]
     private var todosByID: [String: Todo] = [:]
     private var rowViewProvider: ((Todo) -> AnyView)?
@@ -319,25 +412,22 @@ private final class DS: UICollectionViewDiffableDataSource<String, String> {
         rowView: @escaping (Todo) -> AnyView,
         headerView: @escaping (TodoSection) -> AnyView
     ) {
-        let cellReg = UICollectionView.CellRegistration<UICollectionViewCell, String> { _, _, _ in }
-
+        let cellReg = UICollectionView.CellRegistration<TodoCell, String> { _, _, _ in }
         super.init(collectionView: collectionView) { cv, indexPath, id in
             cv.dequeueConfiguredReusableCell(using: cellReg, for: indexPath, item: id)
         }
-
         rowViewProvider = rowView
         headerViewProvider = headerView
 
-        let headerReg = UICollectionView.SupplementaryRegistration<SwiftUISupplementaryView>(
-            elementKind: Self.headerKind
+        let headerReg = UICollectionView.SupplementaryRegistration<SectionHeaderView>(
+            elementKind: Self.headerElementKind
         ) { [weak self] view, _, indexPath in
             guard let self,
                   let sid = self.snapshot().sectionIdentifiers[safe: indexPath.section],
                   let section = self.sectionsByID[sid],
-                  let hv = self.headerViewProvider else { return }
-            view.configure(with: hv(section))
+                  let provider = self.headerViewProvider else { return }
+            view.configure(with: provider(section))
         }
-
         supplementaryViewProvider = { cv, _, indexPath in
             cv.dequeueConfiguredReusableSupplementary(using: headerReg, for: indexPath)
         }
@@ -346,13 +436,10 @@ private final class DS: UICollectionViewDiffableDataSource<String, String> {
     override func collectionView(_ cv: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         let cell = super.collectionView(cv, cellForItemAt: indexPath)
         guard let id = itemIdentifier(for: indexPath) else { return cell }
-
-        if id == draftID {
-            if let dv = draftView {
-                cell.contentConfiguration = UIHostingConfiguration { dv() }.margins(.all, 0)
-            }
-        } else if let todo = todosByID[id], let rv = rowViewProvider {
-            cell.contentConfiguration = UIHostingConfiguration { rv(todo) }.margins(.all, 0)
+        if id == draftItemID {
+            if let draft = draftView { cell.contentConfiguration = UIHostingConfiguration { draft() }.margins(.all, 0) }
+        } else if let todo = todosByID[id], let provider = rowViewProvider {
+            cell.contentConfiguration = UIHostingConfiguration { provider(todo) }.margins(.all, 0)
         }
         return cell
     }

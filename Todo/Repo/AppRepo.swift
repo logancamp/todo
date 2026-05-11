@@ -9,7 +9,7 @@ import Foundation
 
 protocol AppRepository {
     func streamTodos(uid: String, filter: TodoFilter) -> AsyncStream<[Todo]>
-    func create(uid: String, title: String, notes: String, kind: TodoKind, dueAt: Date?, order: String) async throws -> Todo
+    func create(uid: String, title: String, notes: String, kind: TodoKind, scheduledFor: Date?, dueAt: Date?, order: String) async throws -> Todo
     func update(uid: String, todo: Todo) async throws
     func delete(uid: String, id: String) async throws
 }
@@ -21,8 +21,8 @@ final class FirebaseAppRepository: AppRepository {
     func streamTodos(uid: String, filter: TodoFilter) -> AsyncStream<[Todo]> {
         client.listenTodos(uid: uid, filter: filter)
     }
-    func create(uid: String, title: String, notes: String, kind: TodoKind, dueAt: Date?, order: String) async throws -> Todo {
-        try await client.createTodo(uid: uid, title: title, notes: notes, kind: kind, dueAt: dueAt, order: order)
+    func create(uid: String, title: String, notes: String, kind: TodoKind, scheduledFor: Date?, dueAt: Date?, order: String) async throws -> Todo {
+        try await client.createTodo(uid: uid, title: title, notes: notes, kind: kind, scheduledFor: scheduledFor, dueAt: dueAt, order: order)
     }
     func update(uid: String, todo: Todo) async throws {
         try await client.updateTodo(uid: uid, todo: todo)

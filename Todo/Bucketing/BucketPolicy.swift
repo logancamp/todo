@@ -12,7 +12,6 @@ struct BucketPolicy {
     let clock: BucketClock
     init(clock: BucketClock) { self.clock = clock }
 
-    // Static formatter — allocated once, not on every call
     private static let dayFormatter: DateFormatter = {
         let df = DateFormatter()
         df.dateStyle = .full
@@ -21,23 +20,23 @@ struct BucketPolicy {
     }()
 
     func bucket(for t: Todo) -> BucketID {
-        guard let due = t.dueAt else { return .someday }
-        return clock.isPastDay(due) ? .overdue : .day(clock.normalizeDay(due))
+        guard let date = t.scheduledFor else { return .someday }
+        return clock.isPastDay(date) ? .overdue : .day(clock.normalizeDay(date))
     }
 
     func title(for b: BucketID) -> String {
         switch b {
-        case .overdue:      return "Overdue"
-        case .someday:      return "Someday"
-        case .day(let d):   return BucketPolicy.dayFormatter.string(from: d)
+        case .overdue:    return "Overdue"
+        case .someday:    return "Someday"
+        case .day(let d): return BucketPolicy.dayFormatter.string(from: d)
         }
     }
 
     func mutateOnMove(_ todo: inout Todo, to bucket: BucketID) {
         switch bucket {
-        case .overdue:      todo.dueAt = clock.startOfDay(clock.now())
-        case .someday:      todo.dueAt = nil
-        case .day(let d):   todo.dueAt = d
+        case .overdue:    todo.scheduledFor = clock.startOfDay(clock.now())
+        case .someday:    todo.scheduledFor = nil
+        case .day(let d): todo.scheduledFor = d
         }
         todo.updatedAt = Date()
     }

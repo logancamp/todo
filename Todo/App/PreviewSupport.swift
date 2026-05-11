@@ -8,8 +8,7 @@ extension TodoStore {
         let repo = InMemoryAppRepository()
         let policy = BucketPolicy(clock: BucketClock())
         let store = TodoStore(
-            repo: repo,
-            session: session,
+            repo: repo, session: session,
             bucketizer: Bucketizer(policy: policy),
             mapper: SectionMapper(policy: policy),
             validator: Validator()
@@ -39,13 +38,12 @@ final class InMemoryAppRepository: AppRepository {
         }
     }
 
-    func create(uid: String, title: String, notes: String, kind: TodoKind, dueAt: Date?, order: String) async throws -> Todo {
+    func create(uid: String, title: String, notes: String, kind: TodoKind, scheduledFor: Date?, dueAt: Date?, order: String) async throws -> Todo {
         let now = Date()
         let new = Todo(id: UUID().uuidString, title: title, notes: notes,
-                       isDone: false, kind: kind, dueAt: dueAt,
+                       isDone: false, kind: kind, scheduledFor: scheduledFor, dueAt: dueAt,
                        createdAt: now, updatedAt: now, ownerUid: uid, order: order)
-        todos.insert(new, at: 0)
-        broadcast(); return new
+        todos.insert(new, at: 0); broadcast(); return new
     }
 
     func update(uid: String, todo: Todo) async throws {
@@ -55,8 +53,7 @@ final class InMemoryAppRepository: AppRepository {
     }
 
     func delete(uid: String, id: String) async throws {
-        todos.removeAll { $0.id == id }
-        broadcast()
+        todos.removeAll { $0.id == id }; broadcast()
     }
 
     func seed(_ initial: [Todo]) { todos = initial; broadcast() }
@@ -77,23 +74,46 @@ final class InMemoryAppRepository: AppRepository {
 }
 
 private func sampleTodos(ownerUid: String) -> [Todo] {
+    let cal = Calendar.current
     let now = Date()
+    let today     = cal.startOfDay(for: now)
+    let tomorrow  = cal.date(byAdding: .day, value: 1, to: today)!
+    let yesterday = cal.date(byAdding: .day, value: -1, to: today)!
+    let nextWeek  = cal.date(byAdding: .day, value: 7, to: today)!
+
+    // Unique order keys — FractionalIndex.between produces distinct keys per call
+    let o1 = FractionalIndex.between(nil, nil)           // "n"
+    let o2 = FractionalIndex.between(o1, nil)            // after "n"
+    let o3 = FractionalIndex.between(o2, nil)
+    let o4 = FractionalIndex.between(o3, nil)
+    let o5 = FractionalIndex.between(o4, nil)
+    let o6 = FractionalIndex.between(o5, nil)
+
     return [
-        Todo(id: "t1", title: "Buy groceries", notes: "Milk, eggs, bread", isDone: false,
-             kind: .task, dueAt: nil,
-             createdAt: now.addingTimeInterval(-3_600), updatedAt: now.addingTimeInterval(-1_800),
-             ownerUid: ownerUid, order: FractionalIndex.between(nil, nil)),
-        Todo(id: "t2", title: "Finish writeup", notes: "", isDone: false, kind: .reminder,
-             dueAt: now.addingTimeInterval(3_600 * 6),
-             createdAt: now.addingTimeInterval(-7_200), updatedAt: now.addingTimeInterval(-3_600),
-             ownerUid: ownerUid, order: FractionalIndex.between(nil, nil)),
-        Todo(id: "t3", title: "Stretch (2 min)", notes: "", isDone: true, kind: .task, dueAt: nil,
-             createdAt: now.addingTimeInterval(-86_400), updatedAt: now.addingTimeInterval(-40_000),
-             ownerUid: ownerUid, order: FractionalIndex.between(nil, nil)),
-        Todo(id: "t4", title: "Review PR", notes: "Focus on the auth changes", isDone: false,
-             kind: .checklist, dueAt: now.addingTimeInterval(-3_600),
-             createdAt: now.addingTimeInterval(-10_000), updatedAt: now.addingTimeInterval(-5_000),
-             ownerUid: ownerUid, order: FractionalIndex.between(nil, nil)),
+        Todo(id: "t1", title: "Buy groceries", notes: "Milk, eggs, bread",
+             isDone: false, kind: .task, scheduledFor: today, dueAt: nil,
+             createdAt: now.addingTimeInterval(-3_600), updatedAt: now, ownerUid: ownerUid, order: o1),
+
+        Todo(id: "t2", title: "Finish writeup", notes: "Focus on the conclusion",
+             isDone: false, kind: .reminder, scheduledFor: today,
+             dueAt: tomorrow,
+             createdAt: now.addingTimeInterval(-7_200), updatedAt: now, ownerUid: ownerUid, order: o2),
+
+        Todo(id: "t3", title: "Stretch (2 min)", notes: "",
+             isDone: true, kind: .task, scheduledFor: today, dueAt: nil,
+             createdAt: now.addingTimeInterval(-86_400), updatedAt: now, ownerUid: ownerUid, order: o3),
+
+        Todo(id: "t4", title: "Review PR", notes: "Focus on the auth changes",
+             isDone: false, kind: .checklist, scheduledFor: yesterday, dueAt: nil,
+             createdAt: now.addingTimeInterval(-10_000), updatedAt: now, ownerUid: ownerUid, order: o4),
+
+        Todo(id: "t5", title: "Plan sprint", notes: "",
+             isDone: false, kind: .task, scheduledFor: tomorrow, dueAt: nil,
+             createdAt: now.addingTimeInterval(-5_000), updatedAt: now, ownerUid: ownerUid, order: o5),
+
+        Todo(id: "t6", title: "Read chapter 4", notes: "",
+             isDone: false, kind: .task, scheduledFor: nextWeek, dueAt: nil,
+             createdAt: now.addingTimeInterval(-2_000), updatedAt: now, ownerUid: ownerUid, order: o6),
     ]
 }
 

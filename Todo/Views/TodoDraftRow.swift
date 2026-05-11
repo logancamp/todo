@@ -11,19 +11,20 @@ struct TodoDraftRow: View {
     @Binding var title: String
     @Binding var notes: String
     @Binding var kind: TodoKind
-    @Binding var dueDate: Date?
+    @Binding var scheduledFor: Date?
+    @Binding var dueAt: Date?
 
     var onSave: () -> Void
     var onCancel: () -> Void
 
     @FocusState private var focus: Field?
-    @State private var showDatePicker = false
+    @State private var showSchedulePicker = false
+    @State private var showDuePicker = false
 
     private enum Field { case title, notes }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Circle + title + notes in line with item rows
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 0) {
                 Image(systemName: "circle")
                     .font(.title3)
@@ -31,25 +32,35 @@ struct TodoDraftRow: View {
                     .frame(width: 44)
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     TextField("New todo", text: $title)
                         .focused($focus, equals: .title)
                         .submitLabel(.next)
                         .onSubmit { focus = .notes }
 
-                    TextField("Notes", text: $notes)
-                        .focused($focus, equals: .notes)
+                    // Notes — grows with content
+                    TextEditor(text: $notes)
+                        .frame(minHeight: 44)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .scrollDisabled(true)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .submitLabel(.done)
-                        .onSubmit { commit() }
+                        .overlay(alignment: .topLeading) {
+                            if notes.isEmpty {
+                                Text("Notes")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.top, 8)
+                                    .padding(.leading, 5)
+                                    .allowsHitTesting(false)
+                            }
+                        }
                 }
                 .padding(.trailing, 16)
             }
 
-            // Bottom toolbar
+            // Toolbar
             HStack(spacing: 12) {
-                // Kind picker
                 Menu {
                     ForEach(TodoKind.allCases) { k in
                         Button { kind = k } label: {
@@ -57,50 +68,67 @@ struct TodoDraftRow: View {
                         }
                     }
                 } label: {
-                    DraftBadge(kind: kind)
+                    DraftKindBadge(kind: kind)
+                }
+
+                // Schedule date
+                Button {
+                    showSchedulePicker.toggle()
+                    showDuePicker = false
+                } label: {
+                    Label(
+                        scheduledFor?.formatted(date: .abbreviated, time: .omitted) ?? "Set date",
+                        systemImage: "calendar"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(scheduledFor != nil ? .blue : .secondary)
+                }
+                if scheduledFor != nil {
+                    Button { scheduledFor = nil; showSchedulePicker = false } label: {
+                        Image(systemName: "xmark.circle.fill").font(.caption).foregroundStyle(.secondary)
+                    }
                 }
 
                 // Due date
                 Button {
-                    withAnimation(.snappy) { showDatePicker.toggle() }
+                    showDuePicker.toggle()
+                    showSchedulePicker = false
                 } label: {
                     Label(
-                        dueDate.map { $0.formatted(date: .abbreviated, time: .omitted) } ?? "Date",
-                        systemImage: "calendar"
+                        dueAt?.formatted(date: .abbreviated, time: .omitted) ?? "Due date",
+                        systemImage: "clock"
                     )
                     .font(.caption)
-                    .foregroundStyle(dueDate != nil ? .blue : .secondary)
+                    .foregroundStyle(dueAt != nil ? .orange : .secondary)
                 }
-
-                if dueDate != nil {
-                    Button {
-                        dueDate = nil
-                        showDatePicker = false
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                if dueAt != nil {
+                    Button { dueAt = nil; showDuePicker = false } label: {
+                        Image(systemName: "xmark.circle.fill").font(.caption).foregroundStyle(.secondary)
                     }
                 }
-
-                Spacer()
-
-                Button("Cancel") { onCancel() }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Button("Save") { commit() }
-                    .font(.caption.bold())
-                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding(.leading, 44)
 
-            if showDatePicker {
+            if showSchedulePicker {
                 DatePicker(
                     "",
                     selection: Binding(
-                        get: { dueDate ?? Date() },
-                        set: { dueDate = $0; showDatePicker = false }
+                        get: { scheduledFor ?? Date() },
+                        set: { scheduledFor = $0; showSchedulePicker = false }
+                    ),
+                    displayedComponents: .date
+                )
+                .datePickerStyle(.graphical)
+                .padding(.leading, 44)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
+            if showDuePicker {
+                DatePicker(
+                    "",
+                    selection: Binding(
+                        get: { dueAt ?? Date() },
+                        set: { dueAt = $0; showDuePicker = false }
                     ),
                     displayedComponents: .date
                 )
@@ -110,10 +138,10 @@ struct TodoDraftRow: View {
             }
         }
         .padding(.vertical, 10)
-        .animation(.snappy, value: showDatePicker)
+        .animation(.snappy, value: showSchedulePicker)
+        .animation(.snappy, value: showDuePicker)
         .onAppear { focus = .title }
-        // Auto-save when view disappears (keyboard dismissed)
-        .onDisappear { commit() }
+        .onDisappear { commit() }  // auto-save when tapped off
     }
 
     private func commit() {
@@ -130,7 +158,7 @@ struct TodoDraftRow: View {
     }
 }
 
-private struct DraftBadge: View {
+private struct DraftKindBadge: View {
     let kind: TodoKind
     var body: some View {
         Text(kind.rawValue)
@@ -148,3 +176,4 @@ private struct DraftBadge: View {
         }
     }
 }
+

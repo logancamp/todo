@@ -32,7 +32,7 @@ struct Validator {
         if let due = d.dueAt {
             let lo = cal.date(byAdding: .year, value: -5, to: now())!
             let hi = cal.date(byAdding: .year, value: +5, to: now())!
-            guard (lo...hi).contains(due) else { throw ValidationError("Due date is out of range.") }
+            guard (lo...hi).contains(due) else { throw ValidationError("Date is out of range.") }
         }
     }
 
