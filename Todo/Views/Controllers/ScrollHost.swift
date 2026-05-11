@@ -10,6 +10,21 @@ import UIKit
 
 private let draftItemID = "__draft__"
 
+// MARK: - UICollectionView subclass
+// Wraps layoutSubviews in performWithoutAnimation so that when
+// UIHostingConfiguration reports a new preferred size (e.g. row expanding),
+// surrounding cells reposition instantly rather than animating — eliminating
+// the small jump visible when rows expand or collapse.
+// Drag animations are unaffected as they use separate UIView.animate paths.
+
+private final class TodoCollectionView: UICollectionView {
+    override func layoutSubviews() {
+        UIView.performWithoutAnimation { super.layoutSubviews() }
+    }
+}
+
+// MARK: - Public SwiftUI wrapper
+
 struct TodoScrollHost<Row: View, Header: View>: UIViewRepresentable {
     var sections: [TodoSection]
     var rowView: (Todo) -> Row
@@ -53,7 +68,7 @@ struct TodoScrollHost<Row: View, Header: View>: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> UICollectionView {
-        let cv = UICollectionView(frame: .zero, collectionViewLayout: CollectionLayout.make())
+        let cv = TodoCollectionView(frame: .zero, collectionViewLayout: CollectionLayout.make())
         cv.backgroundColor = .clear
         cv.delegate = context.coordinator
         cv.delaysContentTouches = false
@@ -307,7 +322,6 @@ extension TodoScrollHost {
             let afterID: String? = destPath.item > 0 ? peers[safe: destPath.item - 1] : nil
             let beforeID: String? = peers[safe: destPath.item]
 
-            // Update snapshot immediately so UIKit knows the correct new position
             var snap = dataSource.snapshot()
             snap.deleteItems([id])
             if let afterID {
@@ -322,7 +336,6 @@ extension TodoScrollHost {
             }
             dataSource.apply(snap, animatingDifferences: false)
 
-            // Find where the item actually landed after snapshot update
             var landingPath = destPath
             let updatedSnap = dataSource.snapshot()
             outer: for (sIdx, sid) in updatedSnap.sectionIdentifiers.enumerated() {
@@ -332,15 +345,6 @@ extension TodoScrollHost {
             }
 
             coordinator.drop(item.dragItem, toItemAt: landingPath)
-            
-            print("=== DROP ===")
-            print("id: \(id)")
-            print("afterID: \(afterID ?? "nil")")
-            print("beforeID: \(beforeID ?? "nil")")
-            print("sectionID: \(sectionID)")
-            print("peers: \(peers)")
-            print("destPath: \(destPath)")
-            
             onMove(id, afterID, beforeID, sectionID)
         }
     }
@@ -354,6 +358,7 @@ private enum CollectionLayout {
         let item = NSCollectionLayoutItem(layoutSize: itemSize)
         let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(60))
         let group = NSCollectionLayoutGroup.vertical(layoutSize: groupSize, subitems: [item])
+
         let section = NSCollectionLayoutSection(group: group)
         section.interGroupSpacing = 8
         section.contentInsets = .init(top: 8, leading: 0, bottom: 24, trailing: 0)
@@ -372,6 +377,8 @@ private enum CollectionLayout {
         return UICollectionViewCompositionalLayout(section: section, configuration: config)
     }
 }
+
+// MARK: - Section header view
 
 private final class SectionHeaderView: UICollectionReusableView {
     private var hostingController: UIHostingController<AnyView>?
@@ -393,11 +400,15 @@ private final class SectionHeaderView: UICollectionReusableView {
     }
 }
 
+// MARK: - Todo cell
+
 private final class TodoCell: UICollectionViewCell {
     override func apply(_ layoutAttributes: UICollectionViewLayoutAttributes) {
         UIView.performWithoutAnimation { super.apply(layoutAttributes) }
     }
 }
+
+// MARK: - Section data source
 
 private final class SectionDataSource: UICollectionViewDiffableDataSource<String, String> {
     static let headerElementKind = "todo.section.header"
@@ -437,7 +448,9 @@ private final class SectionDataSource: UICollectionViewDiffableDataSource<String
         let cell = super.collectionView(cv, cellForItemAt: indexPath)
         guard let id = itemIdentifier(for: indexPath) else { return cell }
         if id == draftItemID {
-            if let draft = draftView { cell.contentConfiguration = UIHostingConfiguration { draft() }.margins(.all, 0) }
+            if let draft = draftView {
+                cell.contentConfiguration = UIHostingConfiguration { draft() }.margins(.all, 0)
+            }
         } else if let todo = todosByID[id], let provider = rowViewProvider {
             cell.contentConfiguration = UIHostingConfiguration { provider(todo) }.margins(.all, 0)
         }

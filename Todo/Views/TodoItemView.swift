@@ -15,7 +15,6 @@ struct TodoItemView: View {
 
     private var isExpanded: Bool { expandedTodoID == todo.id }
 
-    // Local edit state — initialised from todo when expanded
     @State private var editTitle = ""
     @State private var editNotes = ""
     @State private var editKind: TodoKind = .task
@@ -26,18 +25,43 @@ struct TodoItemView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // Content — expands and contracts, leading space reserved for checkbox
-            Group {
-                if isExpanded {
-                    editBody
-                } else {
-                    collapsedBody
+            VStack(alignment: .leading, spacing: 0) {
+                // zIndex(1) ensures titleRow always renders ON TOP of the
+                // extras below it. In a VStack, later children draw above
+                // earlier ones — so without this, expandedExtras bleeds
+                // over the title during animation.
+                titleRow
+                    .zIndex(1)
+
+                VStack(spacing: 0) {
+                    expandedExtras
+                }
+                .frame(maxHeight: isExpanded ? .infinity : 0, alignment: .top)
+                .opacity(isExpanded ? 1 : 0)
+                .animation(.easeIn(duration: 0.1), value: isExpanded)  // opacity fades fast
+                .clipped()
+                .allowsHitTesting(isExpanded)
+                .zIndex(0)
+                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isExpanded)  // frame springs slower
+
+                if !isExpanded {
+                    collapsedExtras
                 }
             }
+            .padding(.bottom, 10)
+            .padding(.trailing, 16)
             .padding(.leading, 44)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if expandedTodoID != nil {
+                    expandedTodoID = nil
+                } else {
+                    expandedTodoID = todo.id
+                }
+            }
 
-            // Checkbox — absolutely positioned at top-left, never participates
-            // in layout so UIKit's cell resize animation cannot move it
+            // Checkbox — absolutely positioned, never participates in layout
             Button(action: onToggle) {
                 Image(systemName: todo.isDone ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
@@ -50,7 +74,6 @@ struct TodoItemView: View {
         }
         .opacity(expandedTodoID == nil || expandedTodoID == todo.id ? 1.0 : 0.6)
         .blur(radius: expandedTodoID == nil || expandedTodoID == todo.id ? 0 : 0.7)
-        .contentShape(Rectangle())
         .onChange(of: isExpanded) {
             if isExpanded {
                 editTitle = todo.title
@@ -69,63 +92,56 @@ struct TodoItemView: View {
         }
     }
 
-    // MARK: - Collapsed (read-only)
+    // MARK: - Title row
+    // Opaque background ensures nothing animating behind it is visible.
 
-    private var collapsedBody: some View {
+    private var titleRow: some View {
         HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(todo.title)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .strikethrough(todo.isDone, color: .secondary)
-                    .foregroundStyle(todo.isDone ? .secondary : .primary)
-
-                if !todo.notes.isEmpty {
-                    Text(todo.notes)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                HStack(spacing: 8) {
-                    if let scheduled = todo.scheduledFor {
-                        Label(scheduled.formatted(date: .abbreviated, time: .omitted), systemImage: "calendar")
-                            .font(.caption)
-                            .foregroundStyle(isOverdue(scheduled) && !todo.isDone ? .red : .secondary)
-                    }
-                    if let due = todo.dueAt {
-                        Label(due.formatted(date: .abbreviated, time: .omitted), systemImage: "clock")
-                            .font(.caption)
-                            .foregroundStyle(isOverdue(due) && !todo.isDone ? .red : .secondary)
-                    }
-                }
-            }
+            TextField("Title", text: isExpanded ? $editTitle : .constant(todo.title))
+                .font(.body)
+                .disabled(!isExpanded)
+                .lineLimit(isExpanded ? nil : 2)
+                .fixedSize(horizontal: false, vertical: true)
+                .strikethrough(!isExpanded && todo.isDone, color: .secondary)
+                .foregroundStyle(!isExpanded && todo.isDone ? .secondary : .primary)
 
             Spacer(minLength: 8)
+
             KindBadge(kind: todo.kind)
+                .opacity(isExpanded ? 0 : 1)
         }
-        .padding(.bottom, 10)
-        .padding(.trailing, 16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard expandedTodoID == nil else {
-                expandedTodoID = nil
-                return
+        .background(Color(.systemBackground))
+    }
+
+    // MARK: - Collapsed extras
+
+    private var collapsedExtras: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if !todo.notes.isEmpty {
+                Text(todo.notes)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            expandedTodoID = todo.id
+            HStack(spacing: 8) {
+                if let scheduled = todo.scheduledFor {
+                    Label(scheduled.formatted(date: .abbreviated, time: .omitted), systemImage: "calendar")
+                        .font(.caption)
+                        .foregroundStyle(isOverdue(scheduled) && !todo.isDone ? .red : .secondary)
+                }
+                if let due = todo.dueAt {
+                    Label(due.formatted(date: .abbreviated, time: .omitted), systemImage: "clock")
+                        .font(.caption)
+                        .foregroundStyle(isOverdue(due) && !todo.isDone ? .red : .secondary)
+                }
+            }
         }
     }
 
-    // MARK: - Expanded (edit mode)
+    // MARK: - Expanded extras
 
-    private var editBody: some View {
+    private var expandedExtras: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Title
-            TextField("Title", text: $editTitle)
-                .font(.body)
-
-            // Notes — grows with content
             TextEditor(text: $editNotes)
                 .frame(minHeight: 44)
                 .fixedSize(horizontal: false, vertical: true)
@@ -145,9 +161,7 @@ struct TodoItemView: View {
 
             Divider()
 
-            // Toolbar: kind, schedule date, due date
             HStack(spacing: 12) {
-                // Kind
                 Menu {
                     ForEach(TodoKind.allCases) { k in
                         Button { editKind = k } label: {
@@ -158,7 +172,6 @@ struct TodoItemView: View {
                     KindBadge(kind: editKind)
                 }
 
-                // Schedule date (section placement)
                 Button {
                     showSchedulePicker.toggle()
                     showDuePicker = false
@@ -176,7 +189,6 @@ struct TodoItemView: View {
                     }
                 }
 
-                // Due date (deadline label)
                 Button {
                     showDuePicker.toggle()
                     showSchedulePicker = false
@@ -205,7 +217,7 @@ struct TodoItemView: View {
                     displayedComponents: .date
                 )
                 .datePickerStyle(.graphical)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(.opacity)
             }
 
             if showDuePicker {
@@ -218,12 +230,10 @@ struct TodoItemView: View {
                     displayedComponents: .date
                 )
                 .datePickerStyle(.graphical)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(.opacity)
             }
         }
-        .padding(.vertical, 10)
-        .padding(.trailing, 16)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 6)
         .animation(.snappy, value: showSchedulePicker)
         .animation(.snappy, value: showDuePicker)
     }
@@ -241,7 +251,7 @@ struct TodoItemView: View {
     }
 }
 
-// MARK: - Shared sub-views
+// MARK: - Kind badge
 
 private struct KindBadge: View {
     let kind: TodoKind
