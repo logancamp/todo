@@ -28,6 +28,9 @@ struct TodoListScreen: View {
     @State private var editScheduledFor: Date? = nil
     @State private var editDueAt: Date? = nil
 
+    @State private var showSchedulePicker = false
+    @State private var showDuePicker = false
+
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             VStack(spacing: 0) {
@@ -54,6 +57,11 @@ struct TodoListScreen: View {
                         scheduledFor: scheduledFor,
                         insertBeforeOrder: insertBeforeOrder
                     ) {
+                        editTitle = todo.title
+                        editNotes = todo.notes
+                        editKind = todo.kind
+                        editScheduledFor = todo.scheduledFor
+                        editDueAt = todo.dueAt
                         expandedTodoID = todo.id
                     }
                 }
@@ -73,6 +81,9 @@ struct TodoListScreen: View {
             showingError = store.lastError != nil
         }
         .onChange(of: expandedTodoID) { oldID, newID in
+            showSchedulePicker = false
+            showDuePicker = false
+
             if let oldID {
                 let trimmed = editTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
@@ -89,6 +100,33 @@ struct TodoListScreen: View {
         }
         .onReceive(keyboardPublisher) { height in
             keyboardHeight = height
+        }
+        // --- Date picker sheets ---
+        .sheet(isPresented: $showSchedulePicker) {
+            DatePickerSheet(
+                title: "Set Date",
+                tint: .blue,
+                selection: Binding(
+                    get: { editScheduledFor ?? Date() },
+                    set: { editScheduledFor = $0 }
+                ),
+                onClear: { editScheduledFor = nil }
+            )
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showDuePicker) {
+            DatePickerSheet(
+                title: "Due Date",
+                tint: .red,
+                selection: Binding(
+                    get: { editDueAt ?? Date() },
+                    set: { editDueAt = $0 }
+                ),
+                onClear: { editDueAt = nil }
+            )
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
         }
     }
 
@@ -133,6 +171,11 @@ struct TodoListScreen: View {
                             insertAfterOrder: afterOrder,
                             insertBeforeOrder: beforeOrder
                         ) {
+                            editTitle = todo.title
+                            editNotes = todo.notes
+                            editKind = todo.kind
+                            editScheduledFor = todo.scheduledFor
+                            editDueAt = todo.dueAt
                             expandedTodoID = todo.id
                         }
                     }
@@ -142,7 +185,9 @@ struct TodoListScreen: View {
                         editNotes: $editNotes,
                         editKind: $editKind,
                         editScheduledFor: $editScheduledFor,
-                        editDueAt: $editDueAt
+                        editDueAt: $editDueAt,
+                        showSchedulePicker: $showSchedulePicker,
+                        showDuePicker: $showDuePicker
                     ))
                 },
                 rowView: { todo in
@@ -156,6 +201,11 @@ struct TodoListScreen: View {
                                 expandedTodoID = nil
                                 return
                             }
+                            editTitle = todo.title
+                            editNotes = todo.notes
+                            editKind = todo.kind
+                            editScheduledFor = todo.scheduledFor
+                            editDueAt = todo.dueAt
                             expandedTodoID = todo.id
                         }
                     )
@@ -171,7 +221,7 @@ struct TodoListScreen: View {
 
     private var headerBar: some View {
         ZStack(alignment: .topTrailing) {
-            CollapsingHeaderView(title: currentSectionTitle, collapse: $collapse)
+            CollapsingHeaderView(title: "Todo", collapse: $collapse)
             Menu {
                 Section("Show") {
                     filterButton("All",       filter: .all,       icon: "tray")
@@ -245,6 +295,40 @@ struct TodoListScreen: View {
     }
 }
 
+// MARK: - Date picker sheet
+
+private struct DatePickerSheet: View {
+    let title: String
+    let tint: Color
+    @Binding var selection: Date
+    var onClear: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            DatePicker("", selection: $selection, displayedComponents: .date)
+                .datePickerStyle(.graphical)
+                .tint(tint)
+                .padding(.horizontal)
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Clear", role: .destructive) {
+                            onClear()
+                            dismiss()
+                        }
+                        .foregroundStyle(.red)
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+        }
+        .presentationBackground(Color(.systemBackground))
+    }
+}
+
 // MARK: - Detail cell
 
 private struct TodoDetailView: View {
@@ -252,16 +336,13 @@ private struct TodoDetailView: View {
     @Binding var editKind: TodoKind
     @Binding var editScheduledFor: Date?
     @Binding var editDueAt: Date?
-
-    @State private var showSchedulePicker = false
-    @State private var showDuePicker = false
+    @Binding var showSchedulePicker: Bool
+    @Binding var showDuePicker: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             TextEditor(text: $editNotes)
-                .frame(minHeight: 44)
-                .fixedSize(horizontal: false, vertical: true)
-                .scrollDisabled(true)
+                .frame(height: 72)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .overlay(alignment: .topLeading) {
@@ -278,7 +359,7 @@ private struct TodoDetailView: View {
             Divider()
                 .padding(.top, 8)
 
-            HStack(spacing: 12) {
+            HStack(spacing: 4) {
                 Menu {
                     ForEach(TodoKind.allCases) { k in
                         Button { editKind = k } label: {
@@ -290,7 +371,7 @@ private struct TodoDetailView: View {
                 }
 
                 Button {
-                    showSchedulePicker.toggle(); showDuePicker = false
+                    showSchedulePicker = true
                 } label: {
                     Label(
                         editScheduledFor?.formatted(date: .abbreviated, time: .omitted) ?? "Set date",
@@ -298,64 +379,46 @@ private struct TodoDetailView: View {
                     )
                     .font(.caption)
                     .foregroundStyle(editScheduledFor != nil ? .blue : .secondary)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(editScheduledFor != nil ? Color.blue.opacity(0.12) : Color.clear, in: Capsule())
                 }
                 if editScheduledFor != nil {
-                    Button { editScheduledFor = nil; showSchedulePicker = false } label: {
+                    Button { editScheduledFor = nil } label: {
                         Image(systemName: "xmark.circle.fill").font(.caption).foregroundStyle(.secondary)
                     }
                 }
 
                 Button {
-                    showDuePicker.toggle(); showSchedulePicker = false
+                    showDuePicker = true
                 } label: {
                     Label(
                         editDueAt?.formatted(date: .abbreviated, time: .omitted) ?? "Due date",
                         systemImage: "clock"
                     )
                     .font(.caption)
-                    .foregroundStyle(editDueAt != nil ? .orange : .secondary)
+                    .foregroundStyle(editDueAt != nil ? .red : .secondary)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(editDueAt != nil ? Color.red.opacity(0.12) : Color.clear, in: Capsule())
                 }
                 if editDueAt != nil {
-                    Button { editDueAt = nil; showDuePicker = false } label: {
+                    Button { editDueAt = nil } label: {
                         Image(systemName: "xmark.circle.fill").font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
             .padding(.top, 10)
-
-            if showSchedulePicker {
-                DatePicker(
-                    "",
-                    selection: Binding(get: { editScheduledFor ?? Date() }, set: { editScheduledFor = $0; showSchedulePicker = false }),
-                    displayedComponents: .date
-                )
-                .datePickerStyle(.graphical)
-                .transition(.opacity)
-            }
-
-            if showDuePicker {
-                DatePicker(
-                    "",
-                    selection: Binding(get: { editDueAt ?? Date() }, set: { editDueAt = $0; showDuePicker = false }),
-                    displayedComponents: .date
-                )
-                .datePickerStyle(.graphical)
-                .transition(.opacity)
-            }
         }
         .padding(.leading, 44)
         .padding(.trailing, 16)
         .padding(.bottom, 16)
         .background(Color(.systemBackground))
-        .animation(.snappy, value: showSchedulePicker)
-        .animation(.snappy, value: showDuePicker)
     }
 
     private func kindIcon(_ k: TodoKind) -> String {
         switch k {
         case .task: return "checkmark.circle"
         case .reminder: return "bell"
-        case .notes: return "document"
+        case .notes: return "document.circle"
         }
     }
 }

@@ -175,7 +175,8 @@ extension TodoScrollHost {
             // Available vertical space above the keyboard
             let availableHeight = cv.bounds.height - keyboardHeight
             // Target: place the item's top at 30% from the top of the available area
-            let targetOffsetY = attrs.frame.minY - availableHeight * 0.3
+            let headerHeight: CGFloat = 60
+            let targetOffsetY = attrs.frame.minY - headerHeight - availableHeight * 0.15
             let maxOffset = cv.contentSize.height - cv.bounds.height + cv.contentInset.bottom
             let clamped = max(-cv.contentInset.top, min(targetOffsetY, maxOffset))
 
@@ -202,7 +203,7 @@ extension TodoScrollHost {
             let changed = sections.flatMap(\.items).map(\.id).filter { existingIDs.contains($0) }
             if !changed.isEmpty { snap.reconfigureItems(changed) }
 
-            dataSource.apply(snap, animatingDifferences: animated) { [weak self] in
+            dataSource.apply(snap, animatingDifferences: true) { [weak self] in
                 self?.updateSectionCallbacks()
                 if let eid = expandedTodoID {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -222,12 +223,6 @@ extension TodoScrollHost {
             let fp = fingerprint(sections, expandedTodoID: expandedTodoID)
             guard fp != lastFingerprint else {
                 dataSource.detailView = detailView
-                var snap = dataSource.snapshot()
-                let allIDs = snap.itemIdentifiers.filter { !$0.hasPrefix(detailPrefix) }
-                if !allIDs.isEmpty {
-                    snap.reconfigureItems(allIDs)
-                    dataSource.apply(snap, animatingDifferences: false)
-                }
                 return
             }
 
@@ -263,7 +258,7 @@ extension TodoScrollHost {
                     snap.insertItems([wanted], afterItem: todoID)
                 }
 
-                dataSource.apply(snap, animatingDifferences: true) { [weak self] in
+                dataSource.apply(snap, animatingDifferences: false) { [weak self] in
                     if isNewExpansion, let eid = expandedTodoID {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                             self?.scrollToExpandedItem(id: eid)
