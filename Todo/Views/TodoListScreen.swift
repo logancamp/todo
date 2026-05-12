@@ -40,19 +40,19 @@ struct TodoListScreen: View {
                     .padding(.bottom, 80)
             }
 
-            // Tap: create in current section without opening
-            // Long press + drag: drop to position, create there, auto-open
             DraggableFAB {
                 Task {
                     let sectionID = currentSectionID.isEmpty ? "someday" : currentSectionID
                     let scheduledFor = SectionMapper.date(from: sectionID)
                     let insertBeforeOrder = store.sections
                         .first(where: { $0.id == sectionID })?.items.first?.order
-                    await store.add(
+                    if let todo = await store.add(
                         title: "New",
                         scheduledFor: scheduledFor,
                         insertBeforeOrder: insertBeforeOrder
-                    )
+                    ) {
+                        expandedTodoID = todo.id
+                    }
                 }
             }
             .frame(width: 56, height: 56)
@@ -139,6 +139,7 @@ struct TodoListScreen: View {
                     TodoItemView(
                         todo: todo,
                         isExpanded: expandedTodoID == todo.id,
+                        editTitle: $editTitle,
                         onToggle: { Task { await store.toggle(todo.id, to: !todo.isDone) } },
                         onTap: {
                             guard expandedTodoID == nil else {
@@ -219,7 +220,7 @@ struct TodoListScreen: View {
     }
 }
 
-// MARK: - Detail cell
+// MARK: - Detail cell (notes + toolbar only, title is in the row cell above)
 
 private struct TodoDetailView: View {
     @Binding var editNotes: String

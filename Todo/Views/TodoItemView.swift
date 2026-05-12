@@ -10,6 +10,7 @@ import SwiftUI
 struct TodoItemView: View {
     let todo: Todo
     let isExpanded: Bool
+    var editTitle: Binding<String> = .constant("")
     var onToggle: () -> Void = {}
     var onTap: () -> Void = {}
 
@@ -27,10 +28,10 @@ struct TodoItemView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
-                    Text(todo.title)
+                    TextField("Title", text: isExpanded ? editTitle : .constant(todo.title))
                         .font(.body)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .disabled(!isExpanded)
+                        .lineLimit(isExpanded ? nil : 2)
                         .strikethrough(todo.isDone, color: .secondary)
                         .foregroundStyle(todo.isDone ? .secondary : .primary)
 

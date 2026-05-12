@@ -263,8 +263,10 @@ extension TodoScrollHost {
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
             let p = max(0, min(1, scrollView.contentOffset.y / TodoLayout.headerMaxHeight))
-            collapse.wrappedValue = p
-            updateCenteredSection()
+            DispatchQueue.main.async { [weak self] in
+                self?.collapse.wrappedValue = p
+                self?.updateCenteredSection()
+            }
         }
 
         private func updateCenteredSection() {
