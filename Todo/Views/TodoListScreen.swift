@@ -25,13 +25,6 @@ struct TodoListScreen: View {
     @State private var editScheduledFor: Date? = nil
     @State private var editDueAt: Date? = nil
 
-    @State private var draftSectionID: String? = nil
-    @State private var draftTitle = ""
-    @State private var draftNotes = ""
-    @State private var draftKind: TodoKind = .task
-    @State private var draftScheduledFor: Date? = nil
-    @State private var draftDueAt: Date? = nil
-
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             VStack(spacing: 0) {
@@ -47,9 +40,24 @@ struct TodoListScreen: View {
                     .padding(.bottom, 80)
             }
 
-            FloatingActionButton(systemImage: "plus") { openDraft() }
-                .padding(.trailing, 18)
-                .padding(.bottom, 18)
+            // Tap: create in current section without opening
+            // Long press + drag: drop to position, create there, auto-open
+            DraggableFAB {
+                Task {
+                    let sectionID = currentSectionID.isEmpty ? "someday" : currentSectionID
+                    let scheduledFor = SectionMapper.date(from: sectionID)
+                    let insertBeforeOrder = store.sections
+                        .first(where: { $0.id == sectionID })?.items.first?.order
+                    await store.add(
+                        title: "New",
+                        scheduledFor: scheduledFor,
+                        insertBeforeOrder: insertBeforeOrder
+                    )
+                }
+            }
+            .frame(width: 56, height: 56)
+            .padding(.trailing, 18)
+            .padding(.bottom, 18)
         }
         .onAppear { store.start(filter: activeFilter) }
         .onDisappear { store.stop() }
@@ -104,14 +112,21 @@ struct TodoListScreen: View {
                 onBackgroundTap: {
                     expandedTodoID = nil
                 },
-                draftSectionID: draftSectionID,
-                draftView: draftSectionID != nil ? {
-                    AnyView(TodoDraftRow(
-                        title: $draftTitle, notes: $draftNotes, kind: $draftKind,
-                        scheduledFor: $draftScheduledFor, dueAt: $draftDueAt,
-                        onSave: saveDraft, onCancel: clearDraft
-                    ))
-                } : nil,
+                onNewItemDrop: { sectionID, afterID, beforeID in
+                    let scheduledFor = SectionMapper.date(from: sectionID)
+                    let afterOrder = store.items.first(where: { $0.id == afterID })?.order
+                    let beforeOrder = store.items.first(where: { $0.id == beforeID })?.order
+                    Task {
+                        if let todo = await store.add(
+                            title: "New",
+                            scheduledFor: scheduledFor,
+                            insertAfterOrder: afterOrder,
+                            insertBeforeOrder: beforeOrder
+                        ) {
+                            expandedTodoID = todo.id
+                        }
+                    }
+                },
                 detailView: { _ in
                     AnyView(TodoDetailView(
                         editNotes: $editNotes,
@@ -182,28 +197,6 @@ struct TodoListScreen: View {
         activeFilter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill"
     }
 
-    // MARK: - Draft
-
-    private func openDraft() {
-        let targetID = currentSectionID.isEmpty ? "someday" : currentSectionID
-        draftScheduledFor = SectionMapper.date(from: targetID)
-        draftDueAt = nil; draftKind = .task; draftTitle = ""; draftNotes = ""
-        draftSectionID = targetID
-    }
-
-    private func saveDraft() {
-        let trimmed = draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let sectionID = draftSectionID else { clearDraft(); return }
-        let insertBeforeOrder = store.sections.first(where: { $0.id == sectionID })?.items.first?.order
-        Task { await store.add(title: trimmed, kind: draftKind, scheduledFor: draftScheduledFor, dueAt: draftDueAt, notes: draftNotes, insertBeforeOrder: insertBeforeOrder) }
-        clearDraft()
-    }
-
-    private func clearDraft() {
-        draftSectionID = nil; draftTitle = ""; draftNotes = ""
-        draftKind = .task; draftScheduledFor = nil; draftDueAt = nil
-    }
-
     // MARK: - Empty state
 
     private var emptyState: some View {
@@ -239,7 +232,6 @@ private struct TodoDetailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-
             TextEditor(text: $editNotes)
                 .frame(minHeight: 44)
                 .fixedSize(horizontal: false, vertical: true)

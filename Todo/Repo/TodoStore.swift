@@ -28,7 +28,7 @@ final class TodoStore {
     private let validator: Validator
     private var streamTask: Task<Void, Never>?
     private var activeFilter: TodoFilter = .all
-    private var ordersRepaired = false   // run repair only once per session
+    private var ordersRepaired = false
 
     init(
         repo: AppRepository,
@@ -52,9 +52,6 @@ final class TodoStore {
             for await snapshot in repo.streamTodos(uid: uid, filter: filter) {
                 self.items = snapshot
                 self.recomputeSections()
-
-                // One-time repair of duplicate order keys (items added before
-                // fractional indexing existed all share the same default "n")
                 if !self.ordersRepaired {
                     self.ordersRepaired = true
                     await self.repairDuplicateOrders(uid: uid)
@@ -68,24 +65,30 @@ final class TodoStore {
 
     // MARK: - CRUD
 
+    @discardableResult
     func add(
         title: String,
         kind: TodoKind = .task,
         scheduledFor: Date? = nil,
         dueAt: Date? = nil,
         notes: String = "",
-        insertBeforeOrder: String? = nil
-    ) async {
-        guard let uid = session.uid else { return }
+        insertAfterOrder: String? = nil,   // item directly before (for drag drops)
+        insertBeforeOrder: String? = nil   // item directly after
+    ) async -> Todo? {
+        guard let uid = session.uid else { return nil }
         do {
             try validator.validateDraft(.init(title: title, kind: kind, dueAt: scheduledFor))
             loading = true; defer { loading = false }
-            let order = FractionalIndex.between(nil, insertBeforeOrder)
-            _ = try await repo.create(
+            let order = FractionalIndex.between(insertAfterOrder, insertBeforeOrder)
+            let todo = try await repo.create(
                 uid: uid, title: title, notes: notes, kind: kind,
                 scheduledFor: scheduledFor, dueAt: dueAt, order: order
             )
-        } catch { lastError = error }
+            return todo
+        } catch {
+            lastError = error
+            return nil
+        }
     }
 
     func update(_ id: String, title: String, notes: String, kind: TodoKind, scheduledFor: Date?, dueAt: Date?) async {
@@ -113,7 +116,7 @@ final class TodoStore {
         catch { lastError = error }
     }
 
-    // MARK: - Drag/drop reorder
+    // MARK: - Reorder
 
     func reorder(id: String, afterID: String?, beforeID: String?, inSectionID: String) async {
         guard let uid = session.uid,
@@ -147,21 +150,15 @@ final class TodoStore {
     }
 
     // MARK: - Order repair
-    // Items created before fractional indexing all have order "n".
-    // This runs once per session, detects duplicates, assigns unique
-    // evenly-spaced orders, and saves them back to Firestore silently.
 
     private func repairDuplicateOrders(uid: String) async {
         let allOrders = items.map(\.order)
-        guard Set(allOrders).count != allOrders.count else { return }  // no duplicates, skip
+        guard Set(allOrders).count != allOrders.count else { return }
 
         var toUpdate: [Todo] = []
-
         for section in sections {
-            // Sort by current order so relative positions are preserved
             let sectionItems = section.items.sorted { $0.order < $1.order }
             var prev: String? = nil
-
             for var item in sectionItems {
                 let newOrder = FractionalIndex.between(prev, nil)
                 if newOrder != item.order {
@@ -177,8 +174,6 @@ final class TodoStore {
 
         guard !toUpdate.isEmpty else { return }
         recomputeSections()
-
-        // Persist repairs to Firestore silently in the background
         for item in toUpdate {
             try? await repo.update(uid: uid, todo: item)
         }
