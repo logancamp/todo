@@ -66,7 +66,7 @@ struct TodoItemView: View {
                 if let scheduled = todo.scheduledFor {
                     Label(scheduled.formatted(date: .abbreviated, time: .omitted), systemImage: "calendar")
                         .font(.caption)
-                        .foregroundStyle(isOverdue(scheduled) && !todo.isDone ? .red : .secondary)
+                        .foregroundStyle(isOverdue(scheduled) && !todo.isDone ? .yellow : .secondary)
                 }
                 if let due = todo.dueAt {
                     Label(due.formatted(date: .abbreviated, time: .omitted), systemImage: "clock")

@@ -5,7 +5,6 @@
 //  Created by Logan Camp on 10/18/25.
 //
 
-
 import Foundation
 
 struct BucketPolicy {
@@ -34,9 +33,13 @@ struct BucketPolicy {
 
     func mutateOnMove(_ todo: inout Todo, to bucket: BucketID) {
         switch bucket {
-        case .overdue:    todo.scheduledFor = clock.startOfDay(clock.now())
-        case .someday:    todo.scheduledFor = nil
-        case .day(let d): todo.scheduledFor = d
+        case .overdue:
+            // Set to yesterday so the item is genuinely past-due
+            todo.scheduledFor = clock.startOfDay(clock.now().addingTimeInterval(-86400))
+        case .someday:
+            todo.scheduledFor = nil
+        case .day(let d):
+            todo.scheduledFor = d
         }
         todo.updatedAt = Date()
     }

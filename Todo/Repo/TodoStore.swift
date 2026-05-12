@@ -72,8 +72,8 @@ final class TodoStore {
         scheduledFor: Date? = nil,
         dueAt: Date? = nil,
         notes: String = "",
-        insertAfterOrder: String? = nil,   // item directly before (for drag drops)
-        insertBeforeOrder: String? = nil   // item directly after
+        insertAfterOrder: String? = nil,
+        insertBeforeOrder: String? = nil
     ) async -> Todo? {
         guard let uid = session.uid else { return nil }
         do {
@@ -126,14 +126,16 @@ final class TodoStore {
 
         let lo: String? = afterID.flatMap { aid in items.first(where: { $0.id == aid })?.order }
         let hi: String? = beforeID.flatMap { bid in items.first(where: { $0.id == bid })?.order }
-
         todo.order = FractionalIndex.between(lo, hi)
 
-        if let bucket = SectionMapper.bucket(from: inSectionID, clock: bucketizer.policy.clock) {
+        // Only mutate the date if the item actually moved to a different section
+        let currentSectionID = sections.first(where: { $0.items.contains(where: { $0.id == id }) })?.id
+        if inSectionID != currentSectionID,
+           let bucket = SectionMapper.bucket(from: inSectionID, clock: bucketizer.policy.clock) {
             bucketizer.policy.mutateOnMove(&todo, to: bucket)
         }
-        todo.updatedAt = Date()
 
+        todo.updatedAt = Date()
         items[itemIdx] = todo
         recomputeSections()
 
