@@ -55,24 +55,21 @@ struct TodoItemView: View {
     }
 
     private var collapsedExtras: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        HStack(spacing: 8) {
             if !todo.notes.isEmpty {
-                Text(todo.notes)
+                Image(systemName: "document")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
             }
-            HStack(spacing: 8) {
-                if let scheduled = todo.scheduledFor {
-                    Label(scheduled.formatted(date: .abbreviated, time: .omitted), systemImage: "calendar")
-                        .font(.caption)
-                        .foregroundStyle(isOverdue(scheduled) && !todo.isDone ? .orange : .secondary)
-                }
-                if let due = todo.dueAt {
-                    Label(due.formatted(date: .abbreviated, time: .omitted), systemImage: "clock")
-                        .font(.caption)
-                        .foregroundStyle(isOverdue(due) && !todo.isDone ? .red : .secondary)
-                }
+            if let scheduled = todo.scheduledFor {
+                Label(scheduled.formatted(.dateTime.month().day()), systemImage: "calendar")
+                    .font(.caption)
+                    .foregroundStyle(isOverdue(scheduled) && !todo.isDone ? .yellow : .secondary)
+            }
+            if let due = todo.dueAt {
+                Label(due.formatted(.dateTime.month().day()), systemImage: "clock")
+                    .font(.caption)
+                    .foregroundStyle(isOverdue(due) && !todo.isDone ? .red : .secondary)
             }
         }
     }

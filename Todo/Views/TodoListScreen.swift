@@ -355,7 +355,7 @@ private struct TodoDetailView: View {
         switch k {
         case .task: return "checkmark.circle"
         case .reminder: return "bell"
-        case .notes: return "list.bullet"
+        case .notes: return "document"
         }
     }
 }
