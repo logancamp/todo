@@ -66,7 +66,7 @@ struct TodoItemView: View {
                 if let scheduled = todo.scheduledFor {
                     Label(scheduled.formatted(date: .abbreviated, time: .omitted), systemImage: "calendar")
                         .font(.caption)
-                        .foregroundStyle(isOverdue(scheduled) && !todo.isDone ? .yellow : .secondary)
+                        .foregroundStyle(isOverdue(scheduled) && !todo.isDone ? .orange : .secondary)
                 }
                 if let due = todo.dueAt {
                     Label(due.formatted(date: .abbreviated, time: .omitted), systemImage: "clock")
@@ -94,9 +94,9 @@ private struct KindBadge: View {
     }
     private var color: Color {
         switch kind {
-        case .task:      .blue
-        case .reminder:  .orange
-        case .checklist: .purple
+        case .task: .gray
+        case .reminder: .blue
+        case .notes: .green
         }
     }
 }

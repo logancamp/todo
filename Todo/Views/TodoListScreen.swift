@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 
 struct TodoListScreen: View {
     @Environment(TodoStore.self) private var store
@@ -14,8 +15,10 @@ struct TodoListScreen: View {
     @State private var collapse: CGFloat = 0
     @State private var currentSectionTitle = ""
     @State private var currentSectionID = ""
+    @State private var topSectionID = ""
     @State private var activeFilter: TodoFilter = .all
     @State private var showingError = false
+    @State private var keyboardHeight: CGFloat = 0
 
     @State private var expandedTodoID: Todo.ID?
 
@@ -42,7 +45,7 @@ struct TodoListScreen: View {
 
             DraggableFAB {
                 Task {
-                    let sectionID = currentSectionID.isEmpty ? "someday" : currentSectionID
+                    let sectionID = topSectionID.isEmpty ? "someday" : topSectionID
                     let scheduledFor = SectionMapper.date(from: sectionID)
                     let insertBeforeOrder = store.sections
                         .first(where: { $0.id == sectionID })?.items.first?.order
@@ -84,6 +87,9 @@ struct TodoListScreen: View {
                 editDueAt = todo.dueAt
             }
         }
+        .onReceive(keyboardPublisher) { height in
+            keyboardHeight = height
+        }
     }
 
     // MARK: - List
@@ -97,12 +103,16 @@ struct TodoListScreen: View {
                 sections: store.sections,
                 collapse: $collapse,
                 expandedTodoID: expandedTodoID,
+                keyboardHeight: keyboardHeight,
                 onCenteredSectionChange: { id in
                     DispatchQueue.main.async {
                         guard expandedTodoID == nil else { return }
                         currentSectionID = id
                         currentSectionTitle = store.sections.first(where: { $0.id == id })?.title ?? id
                     }
+                },
+                onTopSectionChange: { id in
+                    DispatchQueue.main.async { topSectionID = id }
                 },
                 onSelect: { _ in },
                 onDelete: { id in Task { await store.delete(id) } },
@@ -198,6 +208,21 @@ struct TodoListScreen: View {
         activeFilter == .all ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill"
     }
 
+    // MARK: - Keyboard publisher
+
+    private var keyboardPublisher: AnyPublisher<CGFloat, Never> {
+        Publishers.Merge(
+            NotificationCenter.default
+                .publisher(for: UIResponder.keyboardWillShowNotification)
+                .compactMap { $0.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect }
+                .map(\.height),
+            NotificationCenter.default
+                .publisher(for: UIResponder.keyboardWillHideNotification)
+                .map { _ in CGFloat(0) }
+        )
+        .eraseToAnyPublisher()
+    }
+
     // MARK: - Empty state
 
     private var emptyState: some View {
@@ -220,7 +245,7 @@ struct TodoListScreen: View {
     }
 }
 
-// MARK: - Detail cell (notes + toolbar only, title is in the row cell above)
+// MARK: - Detail cell
 
 private struct TodoDetailView: View {
     @Binding var editNotes: String
@@ -330,7 +355,7 @@ private struct TodoDetailView: View {
         switch k {
         case .task: return "checkmark.circle"
         case .reminder: return "bell"
-        case .checklist: return "list.bullet"
+        case .notes: return "list.bullet"
         }
     }
 }
@@ -347,9 +372,9 @@ private struct KindBadge: View {
     }
     private var color: Color {
         switch kind {
-        case .task: .blue
-        case .reminder: .orange
-        case .checklist: .purple
+        case .task: .gray
+        case .reminder: .blue
+        case .notes: .green
         }
     }
 }

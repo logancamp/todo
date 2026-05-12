@@ -12,7 +12,7 @@ enum TodoFilter {
 }
 
 enum TodoKind: String, Codable, CaseIterable, Identifiable {
-    case task, reminder, checklist
+    case task, reminder, notes
     var id: String { rawValue }
 }
 

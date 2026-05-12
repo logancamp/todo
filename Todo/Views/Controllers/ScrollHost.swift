@@ -29,7 +29,9 @@ struct TodoScrollHost<Row: View, Header: View>: UIViewRepresentable {
     var headerView: (TodoSection) -> Header
 
     var expandedTodoID: Todo.ID? = nil
+    var keyboardHeight: CGFloat = 0
     var onCenteredSectionChange: (String) -> Void = { _ in }
+    var onTopSectionChange: (String) -> Void = { _ in }
     var onSelect: (String) -> Void = { _ in }
     var onDelete: (String) -> Void = { _ in }
     var onMove: (String, String?, String?, String) -> Void = { _, _, _, _ in }
@@ -43,7 +45,9 @@ struct TodoScrollHost<Row: View, Header: View>: UIViewRepresentable {
         sections: [TodoSection],
         collapse: Binding<CGFloat>,
         expandedTodoID: Todo.ID? = nil,
+        keyboardHeight: CGFloat = 0,
         onCenteredSectionChange: @escaping (String) -> Void = { _ in },
+        onTopSectionChange: @escaping (String) -> Void = { _ in },
         onSelect: @escaping (String) -> Void = { _ in },
         onDelete: @escaping (String) -> Void = { _ in },
         onMove: @escaping (String, String?, String?, String) -> Void = { _, _, _, _ in },
@@ -56,7 +60,9 @@ struct TodoScrollHost<Row: View, Header: View>: UIViewRepresentable {
         self.sections = sections
         self._collapse = collapse
         self.expandedTodoID = expandedTodoID
+        self.keyboardHeight = keyboardHeight
         self.onCenteredSectionChange = onCenteredSectionChange
+        self.onTopSectionChange = onTopSectionChange
         self.onSelect = onSelect
         self.onDelete = onDelete
         self.onMove = onMove
@@ -101,12 +107,14 @@ struct TodoScrollHost<Row: View, Header: View>: UIViewRepresentable {
 
     func updateUIView(_ uiView: UICollectionView, context: Context) {
         context.coordinator.onCenteredSectionChange = onCenteredSectionChange
+        context.coordinator.onTopSectionChange = onTopSectionChange
         context.coordinator.onSelect = onSelect
         context.coordinator.onDelete = onDelete
         context.coordinator.onMove = onMove
         context.coordinator.onBackgroundTap = onBackgroundTap
         context.coordinator.onNewItemDrop = onNewItemDrop
         context.coordinator.collapse = $collapse
+        context.coordinator.keyboardHeight = keyboardHeight
         context.coordinator.detailView = detailView
         context.coordinator.updateRowView { AnyView(rowView($0)) }
         context.coordinator.applySnapshotIfNeeded(sections: sections, expandedTodoID: expandedTodoID)
@@ -132,7 +140,9 @@ extension TodoScrollHost {
         private var pendingExpandedTodoID: Todo.ID? = nil
 
         var collapse: Binding<CGFloat> = .constant(0)
+        var keyboardHeight: CGFloat = 0
         var onCenteredSectionChange: (String) -> Void = { _ in }
+        var onTopSectionChange: (String) -> Void = { _ in }
         var onSelect: (String) -> Void = { _ in }
         var onDelete: (String) -> Void = { _ in }
         var onMove: (String, String?, String?, String) -> Void = { _, _, _, _ in }
@@ -153,6 +163,27 @@ extension TodoScrollHost {
             dataSource.rowViewProvider = rowView
         }
 
+        // MARK: Scroll to expanded item
+
+        /// Scrolls so the expanded row is centered in the space between the
+        /// top of the screen and the top of the keyboard.
+        private func scrollToExpandedItem(id: String) {
+            guard let cv = collectionView,
+                  let ip = dataSource.indexPath(for: id),
+                  let attrs = cv.layoutAttributesForItem(at: ip) else { return }
+
+            // Available vertical space above the keyboard
+            let availableHeight = cv.bounds.height - keyboardHeight
+            // Target: place the item's top at 30% from the top of the available area
+            let targetOffsetY = attrs.frame.minY - availableHeight * 0.3
+            let maxOffset = cv.contentSize.height - cv.bounds.height + cv.contentInset.bottom
+            let clamped = max(-cv.contentInset.top, min(targetOffsetY, maxOffset))
+
+            cv.setContentOffset(CGPoint(x: 0, y: clamped), animated: true)
+        }
+
+        // MARK: Snapshot
+
         func applySnapshot(sections: [TodoSection], expandedTodoID: Todo.ID?, animated: Bool) {
             var snap = NSDiffableDataSourceSnapshot<String, String>()
             dataSource.setPayload(sections)
@@ -172,7 +203,12 @@ extension TodoScrollHost {
             if !changed.isEmpty { snap.reconfigureItems(changed) }
 
             dataSource.apply(snap, animatingDifferences: animated) { [weak self] in
-                self?.updateCenteredSection()
+                self?.updateSectionCallbacks()
+                if let eid = expandedTodoID {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        self?.scrollToExpandedItem(id: eid)
+                    }
+                }
             }
         }
 
@@ -215,6 +251,10 @@ extension TodoScrollHost {
 
                 let currentDetailItems = snap.itemIdentifiers.filter { $0.hasPrefix(detailPrefix) }
                 let wantedDetailID = expandedTodoID.map { detailItemID($0) }
+
+                let isNewExpansion = wantedDetailID != nil &&
+                    !currentDetailItems.contains(wantedDetailID!)
+
                 for existing in currentDetailItems where existing != wantedDetailID {
                     snap.deleteItems([existing])
                 }
@@ -222,7 +262,14 @@ extension TodoScrollHost {
                    let todoID = expandedTodoID, snap.itemIdentifiers.contains(todoID) {
                     snap.insertItems([wanted], afterItem: todoID)
                 }
-                dataSource.apply(snap, animatingDifferences: true)
+
+                dataSource.apply(snap, animatingDifferences: true) { [weak self] in
+                    if isNewExpansion, let eid = expandedTodoID {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            self?.scrollToExpandedItem(id: eid)
+                        }
+                    }
+                }
             }
         }
 
@@ -265,21 +312,43 @@ extension TodoScrollHost {
             let p = max(0, min(1, scrollView.contentOffset.y / TodoLayout.headerMaxHeight))
             DispatchQueue.main.async { [weak self] in
                 self?.collapse.wrappedValue = p
-                self?.updateCenteredSection()
+                self?.updateSectionCallbacks()
             }
         }
 
-        private func updateCenteredSection() {
+        private func updateSectionCallbacks() {
             guard let cv = collectionView else { return }
+            let sectionIDs = dataSource.snapshot().sectionIdentifiers
+            guard !sectionIDs.isEmpty else { return }
+
+            let visibleItems = cv.indexPathsForVisibleItems
+            guard !visibleItems.isEmpty else { return }
+
             let centerY = cv.contentOffset.y + cv.bounds.height / 2
-            let candidates = cv.indexPathsForVisibleItems
-            guard !candidates.isEmpty else { return }
-            let closest = candidates.min {
+            let closest = visibleItems.min {
                 abs((cv.layoutAttributesForItem(at: $0)?.frame.midY ?? 0) - centerY) <
                 abs((cv.layoutAttributesForItem(at: $1)?.frame.midY ?? 0) - centerY)
             }
-            let idx = closest?.section ?? candidates.map(\.section).min() ?? 0
-            if let sid = dataSource.sectionID(at: idx) { onCenteredSectionChange(sid) }
+            let centeredIdx = closest?.section ?? visibleItems.map(\.section).min() ?? 0
+            if let sid = dataSource.sectionID(at: centeredIdx) {
+                onCenteredSectionChange(sid)
+            }
+
+            let topY = cv.contentOffset.y
+            var topSectionIdx = 0
+            for (idx, _) in sectionIDs.enumerated() {
+                let snap = dataSource.snapshot()
+                let itemsInSection = snap.itemIdentifiers(inSection: sectionIDs[idx])
+                guard let firstItemID = itemsInSection.first,
+                      let ip = dataSource.indexPath(for: firstItemID),
+                      let attrs = cv.layoutAttributesForItem(at: ip) else { continue }
+                if attrs.frame.minY <= topY + cv.bounds.height * 0.5 {
+                    topSectionIdx = idx
+                }
+            }
+            if let sid = dataSource.sectionID(at: topSectionIdx) {
+                onTopSectionChange(sid)
+            }
         }
 
         // MARK: UICollectionViewDragDelegate
@@ -315,7 +384,6 @@ extension TodoScrollHost {
         // MARK: UICollectionViewDropDelegate
 
         func collectionView(_ cv: UICollectionView, canHandle session: UIDropSession) -> Bool {
-            // Accept internal reorders and FAB drags (both are local sessions)
             session.localDragSession != nil
         }
 
@@ -342,7 +410,6 @@ extension TodoScrollHost {
             guard destPath.section < sectionIDs.count else { return }
             let sectionID = sectionIDs[destPath.section]
 
-            // FAB drop — localObject is fabNewItemMarker
             if item.dragItem.localObject as? String == fabNewItemMarker {
                 let peers = dataSource.snapshot()
                     .itemIdentifiers(inSection: sectionID)
@@ -353,7 +420,6 @@ extension TodoScrollHost {
                 return
             }
 
-            // Internal reorder
             guard let id = item.dragItem.localObject as? String else { return }
 
             let peers = dataSource.snapshot()

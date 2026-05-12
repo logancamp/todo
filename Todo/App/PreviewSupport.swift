@@ -104,7 +104,7 @@ private func sampleTodos(ownerUid: String) -> [Todo] {
              createdAt: now.addingTimeInterval(-86_400), updatedAt: now, ownerUid: ownerUid, order: o3),
 
         Todo(id: "t4", title: "Review PR", notes: "Focus on the auth changes",
-             isDone: false, kind: .checklist, scheduledFor: yesterday, dueAt: nil,
+             isDone: false, kind: .notes, scheduledFor: yesterday, dueAt: nil,
              createdAt: now.addingTimeInterval(-10_000), updatedAt: now, ownerUid: ownerUid, order: o4),
 
         Todo(id: "t5", title: "Plan sprint", notes: "",
