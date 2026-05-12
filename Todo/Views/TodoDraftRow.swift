@@ -25,6 +25,8 @@ struct TodoDraftRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            Divider()
+            
             HStack(spacing: 0) {
                 Image(systemName: "circle")
                     .font(.title3)
