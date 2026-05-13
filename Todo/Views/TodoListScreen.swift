@@ -30,6 +30,7 @@ struct TodoListScreen: View {
 
     @State private var showSchedulePicker = false
     @State private var showDuePicker = false
+    @State private var showKindPicker = false
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -83,6 +84,7 @@ struct TodoListScreen: View {
         .onChange(of: expandedTodoID) { oldID, newID in
             showSchedulePicker = false
             showDuePicker = false
+            showKindPicker = false
 
             if let oldID {
                 let trimmed = editTitle.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -101,7 +103,12 @@ struct TodoListScreen: View {
         .onReceive(keyboardPublisher) { height in
             keyboardHeight = height
         }
-        // --- Date picker sheets ---
+        .confirmationDialog("Kind", isPresented: $showKindPicker) {
+            ForEach(TodoKind.allCases) { k in
+                Button(k.rawValue.capitalized) { editKind = k }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
         .sheet(isPresented: $showSchedulePicker) {
             DatePickerSheet(
                 title: "Set Date",
@@ -187,7 +194,8 @@ struct TodoListScreen: View {
                         editScheduledFor: $editScheduledFor,
                         editDueAt: $editDueAt,
                         showSchedulePicker: $showSchedulePicker,
-                        showDuePicker: $showDuePicker
+                        showDuePicker: $showDuePicker,
+                        showKindPicker: $showKindPicker
                     ))
                 },
                 rowView: { todo in
@@ -338,6 +346,7 @@ private struct TodoDetailView: View {
     @Binding var editDueAt: Date?
     @Binding var showSchedulePicker: Bool
     @Binding var showDuePicker: Bool
+    @Binding var showKindPicker: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -382,10 +391,13 @@ private struct TodoDetailView: View {
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(editScheduledFor != nil ? Color.blue.opacity(0.12) : Color.clear, in: Capsule())
                 }
+                .buttonStyle(.plain)
+
                 if editScheduledFor != nil {
                     Button { editScheduledFor = nil } label: {
                         Image(systemName: "xmark.circle.fill").font(.caption).foregroundStyle(.secondary)
                     }
+                    .buttonStyle(.plain)
                 }
 
                 Button {
@@ -400,10 +412,13 @@ private struct TodoDetailView: View {
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(editDueAt != nil ? Color.red.opacity(0.12) : Color.clear, in: Capsule())
                 }
+                .buttonStyle(.plain)
+
                 if editDueAt != nil {
                     Button { editDueAt = nil } label: {
                         Image(systemName: "xmark.circle.fill").font(.caption).foregroundStyle(.secondary)
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.top, 10)
@@ -413,13 +428,13 @@ private struct TodoDetailView: View {
         .padding(.bottom, 16)
         .background(Color(.systemBackground))
     }
+}
 
-    private func kindIcon(_ k: TodoKind) -> String {
-        switch k {
-        case .task: return "checkmark.circle"
-        case .reminder: return "bell"
-        case .notes: return "document.circle"
-        }
+private func kindIcon(_ k: TodoKind) -> String {
+    switch k {
+    case .task: return "checkmark.circle"
+    case .reminder: return "bell"
+    case .notes: return "document"
     }
 }
 
