@@ -92,3 +92,9 @@ todo/
 ## License
 
 No license has been specified yet.
+
+## Showcase
+<img width="392" height="613" alt="Screenshot 2026-09-18 at 11 07 09 AM" src="https://github.com/user-attachments/assets/209e5fce-b8c8-4573-bc74-9abc05c6d356" />
+<img width="480" height="977" alt="Screenshot 2026-09-18 at 11 06 53 AM" src="https://github.com/user-attachments/assets/b0443b90-a846-437e-a4ab-01ce6343a65d" />
+<img width="466" height="664" alt="Screenshot 2026-09-18 at 11 07 02 AM" src="https://github.com/user-attachments/assets/b1b1e379-59a4-4d20-84c7-074f832a278b" />
+
